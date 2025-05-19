@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/v1/employees")
+@RequestMapping("/employees")
 public class EmployeeController {
 
     private final EmployeeInfoBusinessService employeeService;
@@ -19,13 +19,13 @@ public class EmployeeController {
         this.employeeService = employeeService;
     }
 
-    // 3a. Retrieve employees for a department sorted by name
     @GetMapping("/by-department/{departmentName}")
     public List<Employee> getEmployeesByDepartmentSortedByName(@PathVariable String departmentName) {
         return employeeService.getEmployeesByDepartmentSortedByName(departmentName);
     }
 
-    // 3b. Retrieve department name by employee number
+
+    //Retrieve department name by employee number
     @GetMapping("/{employeeNumber}/department")
     public String getDepartmentByEmployeeNumber(@PathVariable Long employeeNumber) {
         return employeeService.getDepartmentNameByEmployeeNumber(employeeNumber);
