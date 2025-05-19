@@ -24,7 +24,7 @@ class EmployeeControllerTest {
 
     @MockBean
     private EmployeeInfoBusinessService employeeService;
-    
+
     @Test
     void testGetEmployeesByDepartmentSortedByName() throws Exception {
         List<Employee> mockList = List.of(new Employee(1003L, "Ankit"));
