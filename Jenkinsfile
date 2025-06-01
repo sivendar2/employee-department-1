@@ -30,7 +30,7 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     sh '''
-                         mkdir -p ~/.aws
+                        mkdir -p ~/.aws
                         echo "[default]" > ~/.aws/credentials
                         echo "aws_access_key_id=$AWS_ACCESS_KEY_ID" >> ~/.aws/credentials
                         echo "aws_secret_access_key=$AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
@@ -48,33 +48,48 @@ pipeline {
                 '''
             }
         }
-        
-stage('Deploy to ECS Fargate') {
-    steps {
-        script {
-            def clusterName = 'employee-cluster1'
-            def serviceName = 'employee-service'
-            def region = 'us-east-1'
 
-            def serviceStatus = sh (
-                script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${region}",
-                returnStdout: true
-            ).trim()
+        stage('Deploy to ECS Fargate') {
+            steps {
+                script {
+                    def clusterName = 'employee-cluster1'
+                    def serviceName = 'employee-service'
+                    def region = AWS_REGION
+                    def taskDefinition = 'employee-taskdef'
+                    def subnetId = 'subnet-0c06c9ba80675ca5b'
+                    def securityGroupId = 'sg-03992897fd20860bd'
 
-            if (serviceStatus != 'ACTIVE') {
-                error("ECS Service '${serviceName}' is not ACTIVE (current status: ${serviceStatus}). Please create or activate the service before deployment.")
-            } else {
-                sh """
-                aws ecs update-service \
-                    --cluster ${clusterName} \
-                    --service ${serviceName} \
-                    --force-new-deployment \
-                    --region ${region}
-                """
+                    def serviceStatus = sh (
+                        script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${region}",
+                        returnStdout: true
+                    ).trim()
+
+                    if (serviceStatus == 'INACTIVE') {
+                        echo "ECS Service is INACTIVE. Recreating service..."
+                        sh """
+                            aws ecs create-service \
+                              --cluster ${clusterName} \
+                              --service-name ${serviceName} \
+                              --task-definition ${taskDefinition} \
+                              --desired-count 1 \
+                              --launch-type FARGATE \
+                              --network-configuration 'awsvpcConfiguration={subnets=[${subnetId}],securityGroups=[${securityGroupId}],assignPublicIp=ENABLED}' \
+                              --region ${region}
+                        """
+                    } else if (serviceStatus == 'ACTIVE') {
+                        echo "Service is ACTIVE. Proceeding with deployment..."
+                        sh """
+                            aws ecs update-service \
+                              --cluster ${clusterName} \
+                              --service ${serviceName} \
+                              --force-new-deployment \
+                              --region ${region}
+                        """
+                    } else {
+                        error("Unexpected ECS service status: ${serviceStatus}")
+                    }
+                }
             }
         }
-    }
-}
-
     }
 }
