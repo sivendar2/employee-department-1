@@ -6,7 +6,6 @@ pipeline {
         ECR_REPO = '779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1'
         IMAGE_TAG = 'latest'
         EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
-        LOG_GROUP = '/ecs/employee-department1'
     }
 
     stages {
@@ -51,15 +50,6 @@ pipeline {
             }
         }
 
-        stage('Ensure CloudWatch Log Group Exists') {
-            steps {
-                sh """
-                    aws logs describe-log-groups --log-group-name-prefix '/ecs/employee-department1' --region ${AWS_REGION} | grep '/ecs/employee-department1' || \
-                    aws logs create-log-group --log-group-name '/ecs/employee-department1' --region ${AWS_REGION}
-                """
-            }
-        }
-
         stage('Register Task Definition') {
             steps {
                 script {
@@ -81,15 +71,7 @@ pipeline {
                               "protocol": "tcp"
                             }
                           ],
-                          "essential": true,
-                          "logConfiguration": {
-                            "logDriver": "awslogs",
-                            "options": {
-                              "awslogs-group": "${LOG_GROUP}",
-                              "awslogs-region": "${AWS_REGION}",
-                              "awslogs-stream-prefix": "ecs"
-                            }
-                          }
+                          "essential": true
                         }
                       ]
                     }
