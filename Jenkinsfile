@@ -10,7 +10,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git' // Replace with your repo
+                git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
             }
         }
 
@@ -26,7 +26,6 @@ pipeline {
             }
         }
 
-        stages {
         stage('Docker Login to ECR') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
@@ -35,11 +34,10 @@ pipeline {
                         echo "[default]" > ~/.aws/credentials
                         echo "aws_access_key_id=$AWS_ACCESS_KEY_ID" >> ~/.aws/credentials
                         echo "aws_secret_access_key=$AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
-                        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ECR_REPO
+                        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
                     '''
                 }
             }
-        }
         }
 
         stage('Push Docker Image to ECR') {
