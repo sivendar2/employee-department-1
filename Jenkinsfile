@@ -5,6 +5,7 @@ pipeline {
         AWS_REGION = 'us-east-1'
         ECR_REPO = '779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1'
         IMAGE_TAG = 'latest'
+        EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
     }
 
     stages {
@@ -59,6 +60,7 @@ pipeline {
                       "requiresCompatibilities": ["FARGATE"],
                       "cpu": "256",
                       "memory": "512",
+                      "executionRoleArn": "${EXECUTION_ROLE_ARN}",
                       "containerDefinitions": [
                         {
                           "name": "employee-department1",
