@@ -76,3 +76,53 @@ pipeline {
                     """
 
                     writeFile file: 'taskdef.json', text: taskDefJson
+
+                    sh """
+                        aws ecs register-task-definition \
+                          --cli-input-json file://taskdef.json \
+                          --region ${AWS_REGION}
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to ECS Fargate') {
+            steps {
+                script {
+                    def clusterName = 'employee-cluster1'
+                    def serviceName = 'employee-service'
+
+                    def serviceStatus = sh (
+                        script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${AWS_REGION}",
+                        returnStdout: true
+                    ).trim()
+
+                    if (serviceStatus == 'INACTIVE') {
+                        echo "ECS Service is INACTIVE. Recreating service..."
+                        sh """
+                            aws ecs create-service \
+                              --cluster ${clusterName} \
+                              --service-name ${serviceName} \
+                              --task-definition employee-taskdef \
+                              --desired-count 1 \
+                              --launch-type FARGATE \
+                              --network-configuration 'awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}' \
+                              --region ${AWS_REGION}
+                        """
+                    } else if (serviceStatus == 'ACTIVE') {
+                        echo "Service is ACTIVE. Proceeding with deployment..."
+                        sh """
+                            aws ecs update-service \
+                              --cluster ${clusterName} \
+                              --service ${serviceName} \
+                              --force-new-deployment \
+                              --region ${AWS_REGION}
+                        """
+                    } else {
+                        error("Unexpected service status: ${serviceStatus}")
+                    }
+                }
+            }
+        }
+    }
+}
