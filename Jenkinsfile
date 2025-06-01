@@ -48,17 +48,33 @@ pipeline {
                 '''
             }
         }
+        
+stage('Deploy to ECS Fargate') {
+    steps {
+        script {
+            def clusterName = 'employee-cluster1'
+            def serviceName = 'employee-service'
+            def region = 'us-east-1'
 
-        stage('Deploy to ECS Fargate') {
-            steps {
-                sh '''
-                    aws ecs update-service \
-                      --cluster employee-cluster1 \
-                      --service employee-service \
-                      --force-new-deployment \
-                      --region $AWS_REGION
-                '''
+            def serviceStatus = sh (
+                script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${region}",
+                returnStdout: true
+            ).trim()
+
+            if (serviceStatus != 'ACTIVE') {
+                error("ECS Service '${serviceName}' is not ACTIVE (current status: ${serviceStatus}). Please create or activate the service before deployment.")
+            } else {
+                sh """
+                aws ecs update-service \
+                    --cluster ${clusterName} \
+                    --service ${serviceName} \
+                    --force-new-deployment \
+                    --region ${region}
+                """
             }
         }
+    }
+}
+
     }
 }
