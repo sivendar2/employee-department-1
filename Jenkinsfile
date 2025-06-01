@@ -93,6 +93,7 @@ pipeline {
                 script {
                     def clusterName = 'employee-cluster1'
                     def serviceName = 'employee-service'
+                    def networkConfig = "awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}"
 
                     def serviceStatus = sh (
                         script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${AWS_REGION}",
@@ -108,7 +109,7 @@ pipeline {
                               --task-definition employee-taskdef \
                               --desired-count 1 \
                               --launch-type FARGATE \
-                              --network-configuration 'awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}' \
+                              --network-configuration "${networkConfig}" \
                               --region ${AWS_REGION}
                         """
                     } else if (serviceStatus == 'ACTIVE') {
