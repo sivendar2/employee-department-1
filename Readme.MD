@@ -1,4 +1,35 @@
 
+  1. Build Spring Boot App & Docker Image
+mvn clean package
+docker build -t employee-department1 -f Docker/Dockerfile .
+
+2. Push Image to ECR
+Create ECR repository:
+aws ecr create-repository --repository-name employee-department1
+Authenticate ecr -
+aws ecr get-login-password | docker login --username AWS --password-stdin 779846797240.dkr.ecr.us-east-1.amazonaws.com
+
+docker tag employee-department1:latest 779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1
+
+Tag and Push:
+docker tag employee-department1:latest 779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1
+docker push 779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1
+
+3. Create ECS Cluster
+aws ecs create-cluster --cluster-name employee-cluster1
+
+ 4. Create IAM Role for ECS Task Execution
+Create a role -
+aws iam create-role  --role-name ecsTaskExecutionRole --assume-role-policy-document file://D:\VATest\ECS\employee-department\ecs-trust-policy.json
+aws iam attach-role-policy --role-name ecsTaskExecutionRole --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+5. Create Task Definition
+aws ecs register-task-definition --cli-input-json file://D:\VATest\ECS\employee-department\task-def1.json
+
+6. Create ECS Service with Fargate + Load Balancer (optional)
+aws ecs create-service --cluster employee-cluster1 --service-name employee-service --task-definition employee-task1 --launch-type FARGATE --desired-count 1 --network-configuration "awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}"
+
+
 Detail Explanantion of the project -
 
 The EmployeeController is a Spring Boot REST controller that exposes multiple GET endpoints to retrieve employee information based on department and sorting criteria. It delegates the core business logic to the EmployeeInfoBusinessService.
