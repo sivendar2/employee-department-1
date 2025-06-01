@@ -6,6 +6,7 @@ pipeline {
         ECR_REPO = '779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1'
         IMAGE_TAG = 'latest'
         EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
+        LOG_GROUP = '/ecs/employee-department1'  // CloudWatch Logs group for your container logs
     }
 
     stages {
@@ -71,7 +72,15 @@ pipeline {
                               "protocol": "tcp"
                             }
                           ],
-                          "essential": true
+                          "essential": true,
+                          "logConfiguration": {
+                            "logDriver": "awslogs",
+                            "options": {
+                              "awslogs-group": "${LOG_GROUP}",
+                              "awslogs-region": "${AWS_REGION}",
+                              "awslogs-stream-prefix": "ecs"
+                            }
+                          }
                         }
                       ]
                     }
