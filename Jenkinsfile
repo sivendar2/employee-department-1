@@ -54,15 +54,14 @@ pipeline {
         }
 
         stage('Ensure CloudWatch Log Group Exists') {
-            steps {
-                echo "Ensuring log group ${LOG_GROUP} exists"
-                sh """
-                     aws logs describe-log-groups --log-group-name-prefix '${LOG_GROUP}' --region ${AWS_REGION} | grep '${LOG_GROUP}' || \
-                     aws logs create-log-group --log-group-name '${LOG_GROUP}' --region ${AWS_REGION}
-                """
+    steps {
+        sh """
+            aws logs describe-log-groups --log-group-name-prefix '/ecs/employee-department1' --region ${AWS_REGION} | grep '/ecs/employee-department1' || \
+            aws logs create-log-group --log-group-name '/ecs/employee-department1' --region ${AWS_REGION}
+        """
+    }
+}
 
-            }
-        }
 
         // Optional stage to attach logging permissions if not already attached
         // Uncomment only if needed
