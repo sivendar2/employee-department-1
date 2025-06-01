@@ -6,9 +6,7 @@ pipeline {
         ECR_REPO = '779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1'
         IMAGE_TAG = 'latest'
         EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
-        LOG_GROUP = '/ecs/employee-department1' // CloudWatch Logs group
-        CLUSTER_NAME = 'employee-cluster1'
-        SERVICE_NAME = 'employee-service'
+        LOG_GROUP = '/ecs/employee-department1'
     }
 
     stages {
@@ -54,29 +52,13 @@ pipeline {
         }
 
         stage('Ensure CloudWatch Log Group Exists') {
-    steps {
-        sh """
-            aws logs describe-log-groups --log-group-name-prefix '/ecs/employee-department1' --region ${AWS_REGION} | grep '/ecs/employee-department1' || \
-            aws logs create-log-group --log-group-name '/ecs/employee-department1' --region ${AWS_REGION}
-        """
-    }
-}
-
-
-        // Optional stage to attach logging permissions if not already attached
-        // Uncomment only if needed
-        /*
-        stage('Attach Logging Policy to Execution Role') {
             steps {
                 sh """
-                    aws iam attach-role-policy \
-                      --role-name ecsTaskExecutionRole \
-                      --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy \
-                      --region ${AWS_REGION}
+                    aws logs describe-log-groups --log-group-name-prefix '/ecs/employee-department1' --region ${AWS_REGION} | grep '/ecs/employee-department1' || \
+                    aws logs create-log-group --log-group-name '/ecs/employee-department1' --region ${AWS_REGION}
                 """
             }
         }
-        */
 
         stage('Register Task Definition') {
             steps {
@@ -127,10 +109,12 @@ pipeline {
         stage('Deploy to ECS Fargate') {
             steps {
                 script {
+                    def clusterName = 'employee-cluster1'
+                    def serviceName = 'employee-service'
                     def networkConfig = "awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}"
 
                     def serviceStatus = sh (
-                        script: "aws ecs describe-services --cluster ${CLUSTER_NAME} --services ${SERVICE_NAME} --query 'services[0].status' --output text --region ${AWS_REGION}",
+                        script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${AWS_REGION}",
                         returnStdout: true
                     ).trim()
 
@@ -138,8 +122,8 @@ pipeline {
                         echo "ECS Service is INACTIVE. Recreating service..."
                         sh """
                             aws ecs create-service \
-                              --cluster ${CLUSTER_NAME} \
-                              --service-name ${SERVICE_NAME} \
+                              --cluster ${clusterName} \
+                              --service-name ${serviceName} \
                               --task-definition employee-taskdef \
                               --desired-count 1 \
                               --launch-type FARGATE \
@@ -150,8 +134,8 @@ pipeline {
                         echo "Service is ACTIVE. Proceeding with deployment..."
                         sh """
                             aws ecs update-service \
-                              --cluster ${CLUSTER_NAME} \
-                              --service ${SERVICE_NAME} \
+                              --cluster ${clusterName} \
+                              --service ${serviceName} \
                               --force-new-deployment \
                               --region ${AWS_REGION}
                         """
