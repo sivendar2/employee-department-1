@@ -10,7 +10,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git 'https://github.com/sivendar2/employee-department-1.git' // Replace with your repo
+                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git' // Replace with your repo
             }
         }
 
