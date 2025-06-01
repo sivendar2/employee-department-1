@@ -7,6 +7,7 @@ pipeline {
         IMAGE_TAG = 'latest'
         EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
         LOG_GROUP = '/ecs/employee-department1'  // CloudWatch Logs group for your container logs
+        ROLE_NAME = 'ecsTaskExecutionRole'  // Extract role name from ARN for convenience
     }
 
     stages {
@@ -48,6 +49,18 @@ pipeline {
                     docker tag employee-department1:latest $ECR_REPO:$IMAGE_TAG
                     docker push $ECR_REPO:$IMAGE_TAG
                 '''
+            }
+        }
+
+        stage('Attach IAM Policy to Role') {
+            steps {
+                echo "Attaching AmazonECSTaskExecutionRolePolicy to role: ${ROLE_NAME}"
+                sh """
+                    aws iam attach-role-policy \
+                      --role-name ${ROLE_NAME} \
+                      --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy \
+                      --region ${AWS_REGION}
+                """
             }
         }
 
