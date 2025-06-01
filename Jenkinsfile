@@ -49,47 +49,30 @@ pipeline {
             }
         }
 
-        stage('Deploy to ECS Fargate') {
+        stage('Register Task Definition') {
             steps {
                 script {
-                    def clusterName = 'employee-cluster1'
-                    def serviceName = 'employee-service'
-                    def region = AWS_REGION
-                    def taskDefinition = 'employee-taskdef'
-                    def subnetId = 'subnet-0c06c9ba80675ca5b'
-                    def securityGroupId = 'sg-03992897fd20860bd'
-
-                    def serviceStatus = sh (
-                        script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${region}",
-                        returnStdout: true
-                    ).trim()
-
-                    if (serviceStatus == 'INACTIVE') {
-                        echo "ECS Service is INACTIVE. Recreating service..."
-                        sh """
-                            aws ecs create-service \
-                              --cluster ${clusterName} \
-                              --service-name ${serviceName} \
-                              --task-definition ${taskDefinition} \
-                              --desired-count 1 \
-                              --launch-type FARGATE \
-                              --network-configuration 'awsvpcConfiguration={subnets=[${subnetId}],securityGroups=[${securityGroupId}],assignPublicIp=ENABLED}' \
-                              --region ${region}
-                        """
-                    } else if (serviceStatus == 'ACTIVE') {
-                        echo "Service is ACTIVE. Proceeding with deployment..."
-                        sh """
-                            aws ecs update-service \
-                              --cluster ${clusterName} \
-                              --service ${serviceName} \
-                              --force-new-deployment \
-                              --region ${region}
-                        """
-                    } else {
-                        error("Unexpected ECS service status: ${serviceStatus}")
+                    def taskDefJson = """
+                    {
+                      "family": "employee-taskdef",
+                      "networkMode": "awsvpc",
+                      "requiresCompatibilities": ["FARGATE"],
+                      "cpu": "256",
+                      "memory": "512",
+                      "containerDefinitions": [
+                        {
+                          "name": "employee-department1",
+                          "image": "${ECR_REPO}:${IMAGE_TAG}",
+                          "portMappings": [
+                            {
+                              "containerPort": 8080,
+                              "protocol": "tcp"
+                            }
+                          ],
+                          "essential": true
+                        }
+                      ]
                     }
-                }
-            }
-        }
-    }
-}
+                    """
+
+                    writeFile file: 'taskdef.json', text: taskDefJson
