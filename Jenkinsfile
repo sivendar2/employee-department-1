@@ -5,7 +5,7 @@ pipeline {
         AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')       // from Jenkins credentials
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')   // from Jenkins credentials
         AWS_REGION            = 'us-east-1'                             // or your region
-        ECR_REPO              = 'your-account-id.dkr.ecr.us-east-1.amazonaws.com/employee-department1'
+        ECR_REPO              = '779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1'
     }
 
     stages {
@@ -88,7 +88,7 @@ pipeline {
     }
 }
 
-// ✅ Shared function to set AWS environment for shell blocks
+//  Shared function to set AWS environment for shell blocks
 def runWithAwsEnv(String script) {
     sh """
         export AWS_ACCESS_KEY_ID=${env.AWS_ACCESS_KEY_ID}
