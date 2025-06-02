@@ -54,8 +54,7 @@ pipeline {
         stage('Ensure CloudWatch Log Group Exists') {
             steps {
                 sh """
-                    aws logs describe-log-groups --log-group-name-prefix '${LOG_GROUP}' --region ${AWS_REGION} | grep '${LOG_GROUP}' || \
-                    aws logs create-log-group --log-group-name '${LOG_GROUP}' --region ${AWS_REGION}
+                    aws logs describe-log-groups --log-group-name-prefix "/ecs/employee-department1" --region us-east-1
                 """
             }
         }
