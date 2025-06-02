@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3307/vatest
+    url: jdbc:mysql://vatest-db.cby6eiqg8v59.us-east-1.rds.amazonaws.com:3306/vatest
     username: root
-    password: password
+    password: rajaiah123
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
