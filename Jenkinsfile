@@ -7,10 +7,14 @@ pipeline {
         IMAGE_TAG = 'latest'
         EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
         LOG_GROUP = '/ecs/employee-department1'
+        CLUSTER_NAME = 'employee-cluster1'
+        SERVICE_NAME = 'employee-service'
+        SUBNET_ID = 'subnet-0c06c9ba80675ca5b'
+        SECURITY_GROUP_ID = 'sg-03992897fd20860bd'
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout SCM') {
             steps {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
             }
@@ -20,19 +24,18 @@ pipeline {
             steps {
                 dir('terraform') {
                     script {
+                        // Initialize Terraform
+                        sh 'terraform init'
+
+                        // Import existing resources to Terraform state (ignore errors if already imported)
                         sh '''
-                            # Initialize Terraform
-                            terraform init
-
-                            # Import existing IAM Role if it exists
-                            terraform import aws_iam_role.ecs_task_execution_role ecsTaskExecutionRole || echo "IAM Role ecsTaskExecutionRole already imported"
-
-                            # Import existing CloudWatch Log Group if it exists
-                            terraform import aws_cloudwatch_log_group.ecs_log_group /ecs/employee-department1 || echo "CloudWatch Log Group already imported"
-
-                            # Apply Terraform changes (create/update resources)
-                            terraform apply -auto-approve
+                            terraform import aws_ecr_repository.app_repo employee-department1 || echo "ECR repo already imported"
+                            terraform import aws_cloudwatch_log_group.ecs_log_group /ecs/employee-department1 || echo "Log group already imported"
+                            terraform import aws_iam_role.ecs_task_execution_role ecsTaskExecutionRole || echo "IAM role already imported"
                         '''
+
+                        // Apply Terraform to create/update resources
+                        sh 'terraform apply -auto-approve'
                     }
                 }
             }
@@ -69,14 +72,6 @@ pipeline {
                 sh '''
                     docker tag employee-department1:latest $ECR_REPO:$IMAGE_TAG
                     docker push $ECR_REPO:$IMAGE_TAG
-                '''
-            }
-        }
-
-        stage('Ensure CloudWatch Log Group Exists') {
-            steps {
-                sh '''
-                    aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists or creation skipped"
                 '''
             }
         }
@@ -130,21 +125,19 @@ pipeline {
         stage('Deploy to ECS Fargate') {
             steps {
                 script {
-                    def clusterName = 'employee-cluster1'
-                    def serviceName = 'employee-service'
-                    def networkConfig = "awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}"
+                    def networkConfig = "awsvpcConfiguration={subnets=[${SUBNET_ID}],securityGroups=[${SECURITY_GROUP_ID}],assignPublicIp=ENABLED}"
 
                     def serviceStatus = sh (
-                        script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${AWS_REGION}",
+                        script: "aws ecs describe-services --cluster ${CLUSTER_NAME} --services ${SERVICE_NAME} --query 'services[0].status' --output text --region ${AWS_REGION}",
                         returnStdout: true
                     ).trim()
 
                     if (serviceStatus == 'INACTIVE') {
-                        echo "ECS Service is INACTIVE. Recreating service..."
+                        echo "ECS Service is INACTIVE. Creating service..."
                         sh """
                             aws ecs create-service \
-                              --cluster ${clusterName} \
-                              --service-name ${serviceName} \
+                              --cluster ${CLUSTER_NAME} \
+                              --service-name ${SERVICE_NAME} \
                               --task-definition employee-taskdef \
                               --desired-count 1 \
                               --launch-type FARGATE \
@@ -152,11 +145,11 @@ pipeline {
                               --region ${AWS_REGION}
                         """
                     } else if (serviceStatus == 'ACTIVE') {
-                        echo "Service is ACTIVE. Proceeding with deployment..."
+                        echo "Service is ACTIVE. Updating service..."
                         sh """
                             aws ecs update-service \
-                              --cluster ${clusterName} \
-                              --service ${serviceName} \
+                              --cluster ${CLUSTER_NAME} \
+                              --service ${SERVICE_NAME} \
                               --force-new-deployment \
                               --region ${AWS_REGION}
                         """
