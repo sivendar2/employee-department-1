@@ -52,13 +52,14 @@ pipeline {
         }
 
         stage('Ensure CloudWatch Log Group Exists') {
-    steps {
-        sh '''
-            echo "Ensuring CloudWatch log group ${LOG_GROUP} exists"
-            aws logs create-log-group --log-group-name "${LOG_GROUP}" --region ${AWS_REGION} || echo "Log group already exists or error ignored"
-        '''
-    }
-}
+            steps {
+                sh '''
+                    LOG_GROUP_ESCAPED=$(echo $LOG_GROUP | sed 's|/|\\/|g')
+                    echo "Escaped log group name: $LOG_GROUP_ESCAPED"
+                    aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists or creation skipped"
+                '''
+            }
+        }
 
         stage('Register Task Definition') {
             steps {
