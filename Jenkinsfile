@@ -7,12 +7,35 @@ pipeline {
         IMAGE_TAG = 'latest'
         EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
         LOG_GROUP = '/ecs/employee-department1'
+        CLUSTER_NAME = 'employee-cluster1'
+        SERVICE_NAME = 'employee-service'
+        SUBNETS = 'subnet-0c06c9ba80675ca5b'        // Replace with your subnet IDs
+        SECURITY_GROUPS = 'sg-03992897fd20860bd'    // Replace with your security group IDs
     }
 
     stages {
         stage('Checkout') {
             steps {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
+            }
+        }
+
+        stage('Provision ECS Infrastructure with Terraform') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    sh '''
+                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        export AWS_DEFAULT_REGION=${AWS_REGION}
+
+                        cd terraform
+                        terraform init
+
+                        # Run terraform apply but ignore errors if resource already exists (log group, IAM role)
+                        terraform apply -auto-approve || echo "Terraform apply had errors but continuing..."
+                        cd ..
+                    '''
+                }
             }
         }
 
@@ -32,10 +55,10 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     sh '''
-                        mkdir -p ~/.aws
-                        echo "[default]" > ~/.aws/credentials
-                        echo "aws_access_key_id=$AWS_ACCESS_KEY_ID" >> ~/.aws/credentials
-                        echo "aws_secret_access_key=$AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
+                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        export AWS_DEFAULT_REGION=${AWS_REGION}
+
                         aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
                     '''
                 }
@@ -53,11 +76,15 @@ pipeline {
 
         stage('Ensure CloudWatch Log Group Exists') {
             steps {
-                sh '''
-                    LOG_GROUP_ESCAPED=$(echo $LOG_GROUP | sed 's|/|\\/|g')
-                    echo "Escaped log group name: $LOG_GROUP_ESCAPED"
-                    aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists or creation skipped"
-                '''
+                withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    sh '''
+                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        export AWS_DEFAULT_REGION=${AWS_REGION}
+
+                        aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists or creation skipped"
+                    '''
+                }
             }
         }
 
@@ -95,14 +122,17 @@ pipeline {
                       ]
                     }
                     """
-
                     writeFile file: 'taskdef.json', text: taskDefJson
 
-                    sh """
-                        aws ecs register-task-definition \
-                          --cli-input-json file://taskdef.json \
-                          --region ${AWS_REGION}
-                    """
+                    withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                        sh '''
+                            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                            export AWS_DEFAULT_REGION=${AWS_REGION}
+
+                            aws ecs register-task-definition --cli-input-json file://taskdef.json --region ${AWS_REGION}
+                        '''
+                    }
                 }
             }
         }
@@ -110,38 +140,39 @@ pipeline {
         stage('Deploy to ECS Fargate') {
             steps {
                 script {
-                    def clusterName = 'employee-cluster1'
-                    def serviceName = 'employee-service'
-                    def networkConfig = "awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}"
-
-                    def serviceStatus = sh (
-                        script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${AWS_REGION}",
-                        returnStdout: true
-                    ).trim()
-
-                    if (serviceStatus == 'INACTIVE') {
-                        echo "ECS Service is INACTIVE. Recreating service..."
+                    withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                         sh """
-                            aws ecs create-service \
-                              --cluster ${clusterName} \
-                              --service-name ${serviceName} \
-                              --task-definition employee-taskdef \
-                              --desired-count 1 \
-                              --launch-type FARGATE \
-                              --network-configuration "${networkConfig}" \
-                              --region ${AWS_REGION}
+                            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                            export AWS_DEFAULT_REGION=${AWS_REGION}
+
+                            echo "Checking ECS service status..."
+                            serviceStatus=\$(aws ecs describe-services --cluster ${CLUSTER_NAME} --services ${SERVICE_NAME} --query 'services[0].status' --output text)
+
+                            echo "Service status: \$serviceStatus"
+
+                            networkConfig="awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SECURITY_GROUPS}],assignPublicIp=ENABLED}"
+
+                            if [ "\$serviceStatus" = "INACTIVE" ] || [ "\$serviceStatus" = "NONE" ] || [ -z "\$serviceStatus" ]; then
+                              echo "Creating ECS service since service does not exist or inactive"
+                              aws ecs create-service \
+                                --cluster ${CLUSTER_NAME} \
+                                --service-name ${SERVICE_NAME} \
+                                --task-definition employee-taskdef \
+                                --desired-count 1 \
+                                --launch-type FARGATE \
+                                --network-configuration "\$networkConfig"
+                            elif [ "\$serviceStatus" = "ACTIVE" ]; then
+                              echo "Updating ECS service to force new deployment"
+                              aws ecs update-service \
+                                --cluster ${CLUSTER_NAME} \
+                                --service ${SERVICE_NAME} \
+                                --force-new-deployment
+                            else
+                              echo "Unexpected ECS service status: \$serviceStatus"
+                              exit 1
+                            fi
                         """
-                    } else if (serviceStatus == 'ACTIVE') {
-                        echo "Service is ACTIVE. Proceeding with deployment..."
-                        sh """
-                            aws ecs update-service \
-                              --cluster ${clusterName} \
-                              --service ${serviceName} \
-                              --force-new-deployment \
-                              --region ${AWS_REGION}
-                        """
-                    } else {
-                        error("Unexpected service status: ${serviceStatus}")
                     }
                 }
             }
