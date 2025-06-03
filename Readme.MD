@@ -68,8 +68,7 @@ URL: /sorted-by-department-and-id
 Description: Returns all employees sorted first by department name and then by employee number.
 
 Delegates to: getAllEmployeesSortedByDeptAndEmpNo()
-
-✅ Use Case Summary
+Use Case Summary
 Provides flexible query options to retrieve employee data based on:
 
 Department name
