@@ -1,172 +1,108 @@
-pipeline {
-    agent any
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>3.4.5</version>
+		<relativePath/> <!-- lookup parent from repository -->
+	</parent>
+	<groupId>com.ameya</groupId>
+	<artifactId>employee-department</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>employee-department</name>
+	<description>Employee Department</description>
+	<url/>
+	<licenses>
+		<license/>
+	</licenses>
+	<developers>
+		<developer/>
+	</developers>
+	<scm>
+		<connection/>
+		<developerConnection/>
+		<tag/>
+		<url/>
+	</scm>
+	<properties>
+		<java.version>21</java.version>
+	</properties>
+	<dependencies>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
 
-    environment {
-        AWS_REGION = 'us-east-1'
-        ECR_REPO = '779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1'
-        IMAGE_TAG = 'latest'
-        EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
-        LOG_GROUP = '/ecs/employee-department1'
-        SONAR_HOST_URL = 'http://3.82.114.91:9000'
-        SONAR_PROJECT_KEY = 'employee-department-1'
-        SONAR_TOKEN = credentials('sonar-token-jenkins') // Jenkins Credentials ID for the Sonar token
-    }
+		<dependency>
+			<groupId>com.mysql</groupId>
+			<artifactId>mysql-connector-j</artifactId>
+			<version>8.0.33</version>
+			<scope>runtime</scope>
+		</dependency>
 
-    stages {
-        stage('Checkout') {
-            steps {
-                git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
-            }
-        }
 
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('SonarQubeServer') {
-                    sh """
-                        mvn sonar:sonar \
-                          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                          -Dsonar.host.url=${SONAR_HOST_URL} \
-                          -Dsonar.login=${SONAR_TOKEN}
-                    """
-                }
-            }
-        }
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>2.5.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<version>3.4.5</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
 
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 2, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<annotationProcessorPaths>
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+						</path>
+					</annotationProcessorPaths>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<exclude>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+						</exclude>
+					</excludes>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>3.9.1.2184</version> <!-- or latest -->
+			</plugin>
+		</plugins>
+		<finalName>employee-department</finalName>
+	</build>
 
-        stage('Build App') {
-            steps {
-                sh 'mvn clean package -DskipTests'
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh 'docker build -t employee-department1 -f Docker/Dockerfile .'
-            }
-        }
-
-        stage('Docker Login to ECR') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                    sh '''
-                        mkdir -p ~/.aws
-                        echo "[default]" > ~/.aws/credentials
-                        echo "aws_access_key_id=$AWS_ACCESS_KEY_ID" >> ~/.aws/credentials
-                        echo "aws_secret_access_key=$AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
-                        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
-                    '''
-                }
-            }
-        }
-
-        stage('Push Docker Image to ECR') {
-            steps {
-                sh '''
-                    docker tag employee-department1:latest $ECR_REPO:$IMAGE_TAG
-                    docker push $ECR_REPO:$IMAGE_TAG
-                '''
-            }
-        }
-
-        stage('Ensure CloudWatch Log Group Exists') {
-            steps {
-                sh '''
-                    aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists or creation skipped"
-                '''
-            }
-        }
-
-        stage('Register Task Definition') {
-            steps {
-                script {
-                    def taskDefJson = """
-                    {
-                      "family": "employee-taskdef",
-                      "networkMode": "awsvpc",
-                      "requiresCompatibilities": ["FARGATE"],
-                      "cpu": "512",
-                      "memory": "1024",
-                      "executionRoleArn": "${EXECUTION_ROLE_ARN}",
-                      "containerDefinitions": [
-                        {
-                          "name": "employee-department1",
-                          "image": "${ECR_REPO}:${IMAGE_TAG}",
-                          "portMappings": [
-                            {
-                              "containerPort": 8080,
-                              "protocol": "tcp"
-                            }
-                          ],
-                          "essential": true,
-                          "logConfiguration": {
-                            "logDriver": "awslogs",
-                            "options": {
-                              "awslogs-group": "${LOG_GROUP}",
-                              "awslogs-region": "${AWS_REGION}",
-                              "awslogs-stream-prefix": "ecs"
-                            }
-                          }
-                        }
-                      ]
-                    }
-                    """
-                    writeFile file: 'taskdef.json', text: taskDefJson
-                    sh """
-                        aws ecs register-task-definition \
-                          --cli-input-json file://taskdef.json \
-                          --region ${AWS_REGION}
-                    """
-                }
-            }
-        }
-
-        stage('Deploy to ECS Fargate') {
-            steps {
-                script {
-                    def clusterName = 'employee-cluster1'
-                    def serviceName = 'employee-service'
-                    def networkConfig = "awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}"
-
-                    def serviceStatus = sh (
-                        script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${AWS_REGION}",
-                        returnStdout: true
-                    ).trim()
-
-                    echo "Service status: ${serviceStatus}"
-
-                    if (serviceStatus == 'INACTIVE' || serviceStatus == 'None' || serviceStatus == 'null' || serviceStatus == '') {
-                        echo "ECS Service does not exist or inactive. Creating service..."
-                        sh """
-                            aws ecs create-service \
-                              --cluster ${clusterName} \
-                              --service-name ${serviceName} \
-                              --task-definition employee-taskdef \
-                              --desired-count 1 \
-                              --launch-type FARGATE \
-                              --network-configuration "${networkConfig}" \
-                              --region ${AWS_REGION}
-                        """
-                    } else if (serviceStatus == 'ACTIVE') {
-                        echo "Service is ACTIVE. Proceeding with deployment..."
-                        sh """
-                            aws ecs update-service \
-                              --cluster ${clusterName} \
-                              --service ${serviceName} \
-                              --force-new-deployment \
-                              --region ${AWS_REGION}
-                        """
-                    } else {
-                        error("Unexpected ECS service status: ${serviceStatus}")
-                    }
-                }
-            }
-        }
-    }
-}
+</project>
