@@ -7,12 +7,36 @@ pipeline {
         IMAGE_TAG = 'latest'
         EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
         LOG_GROUP = '/ecs/employee-department1'
+        SONAR_HOST_URL = 'http://3.82.114.91:9000'
+        SONAR_PROJECT_KEY = 'employee-department-1'
+        SONAR_TOKEN = credentials('sonar-token-jenkins') // Jenkins Credentials ID for the Sonar token
     }
 
     stages {
         stage('Checkout') {
             steps {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQubeServer') {
+                    sh """
+                        mvn sonar:sonar \
+                          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                          -Dsonar.host.url=${SONAR_HOST_URL} \
+                          -Dsonar.login=${SONAR_TOKEN}
+                    """
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
             }
         }
 
@@ -93,9 +117,7 @@ pipeline {
                       ]
                     }
                     """
-
                     writeFile file: 'taskdef.json', text: taskDefJson
-
                     sh """
                         aws ecs register-task-definition \
                           --cli-input-json file://taskdef.json \
@@ -112,7 +134,6 @@ pipeline {
                     def serviceName = 'employee-service'
                     def networkConfig = "awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}"
 
-                    // Fetch ECS service status
                     def serviceStatus = sh (
                         script: "aws ecs describe-services --cluster ${clusterName} --services ${serviceName} --query 'services[0].status' --output text --region ${AWS_REGION}",
                         returnStdout: true
@@ -120,7 +141,6 @@ pipeline {
 
                     echo "Service status: ${serviceStatus}"
 
-                    // Handle cases where service does not exist or inactive
                     if (serviceStatus == 'INACTIVE' || serviceStatus == 'None' || serviceStatus == 'null' || serviceStatus == '') {
                         echo "ECS Service does not exist or inactive. Creating service..."
                         sh """
