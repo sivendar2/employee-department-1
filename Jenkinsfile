@@ -7,7 +7,7 @@ pipeline {
         IMAGE_TAG = 'latest'
         EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
         LOG_GROUP = '/ecs/employee-department1'
-        SONAR_HOST_URL = 'http://3.82.114.91:9000'
+        SONAR_HOST_URL = 'http://54.159.22.31:9000'
         SONAR_PROJECT_KEY = 'employee-department-1'
         SONAR_TOKEN = credentials('sonar-token-jenkins') // Jenkins Credentials ID for the Sonar token
     }
