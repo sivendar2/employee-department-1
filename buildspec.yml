@@ -22,6 +22,7 @@ phases:
   install:
     runtime-versions:
       java: corretto17
+      docker: 20
     commands:
       - echo Installing AWS CLI...
       - pip install --upgrade awscli
@@ -53,37 +54,35 @@ phases:
 
       - echo Registering ECS Task Definition...
       - |
-        cat <<EOF > taskdef.json
-{
-  "family": "$TASK_DEF_NAME",
-  "networkMode": "awsvpc",
-  "requiresCompatibilities": ["FARGATE"],
-  "cpu": "512",
-  "memory": "1024",
-  "executionRoleArn": "$EXECUTION_ROLE_ARN",
-  "containerDefinitions": [
-    {
-      "name": "employee-department1",
-      "image": "$ECR_REPO:$IMAGE_TAG",
-      "portMappings": [
-        {
-          "containerPort": 8080,
-          "protocol": "tcp"
-        }
-      ],
-      "essential": true,
-      "logConfiguration": {
-        "logDriver": "awslogs",
-        "options": {
-          "awslogs-group": "$LOG_GROUP",
-          "awslogs-region": "$AWS_REGION",
-          "awslogs-stream-prefix": "ecs"
-        }
-      }
-    }
-  ]
-}
-EOF
+        echo '{
+          "family": "'"$TASK_DEF_NAME"'",
+          "networkMode": "awsvpc",
+          "requiresCompatibilities": ["FARGATE"],
+          "cpu": "512",
+          "memory": "1024",
+          "executionRoleArn": "'"$EXECUTION_ROLE_ARN"'",
+          "containerDefinitions": [
+            {
+              "name": "employee-department1",
+              "image": "'"$ECR_REPO:$IMAGE_TAG"'",
+              "portMappings": [
+                {
+                  "containerPort": 8080,
+                  "protocol": "tcp"
+                }
+              ],
+              "essential": true,
+              "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                  "awslogs-group": "'"$LOG_GROUP"'",
+                  "awslogs-region": "'"$AWS_REGION"'",
+                  "awslogs-stream-prefix": "ecs"
+                }
+              }
+            }
+          ]
+        }' > taskdef.json
 
       - aws ecs register-task-definition --cli-input-json file://taskdef.json --region $AWS_REGION
 
