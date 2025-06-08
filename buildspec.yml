@@ -9,9 +9,8 @@ env:
     LOG_GROUP: /ecs/employee-department1
     SONAR_PROJECT_KEY: employee-department-1cd
     SONAR_HOST_URL: http://sonarqube.sivendar.click:9000
-
   secrets-manager:
-    SONAR_TOKEN: sonar_token  # Assumes SONAR_TOKEN stored in AWS Secrets Manager
+    SONAR_TOKEN: sonar_token:SONAR_TOKEN  # Ensure correct mapping
 
 phases:
   install:
@@ -20,23 +19,27 @@ phases:
       docker: 20
     commands:
       - echo Installing dependencies...
+      - echo JAVA_HOME is $JAVA_HOME
+      - mvn -version
+      - echo Docker version:
+      - docker version
 
   pre_build:
     commands:
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
 
-      - echo Setting up Sonar Scanner...
-      - export PATH=$PATH:/root/.sonar/scanner/bin
+      - echo Running SonarQube analysis...
       - mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-        -Dsonar.projectKey=$SONAR_PROJECT_KEY \
-        -Dsonar.host.url=$SONAR_HOST_URL \
-        -Dsonar.login=$SONAR_TOKEN || echo "Sonar scan skipped (optional for build failure tolerance)"
+          -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+          -Dsonar.host.url=$SONAR_HOST_URL \
+          -Dsonar.login=$SONAR_TOKEN || echo "SonarQube scan skipped (non-blocking)"
 
   build:
     commands:
       - echo Building the project...
       - mvn clean package -DskipTests
+
       - echo Building Docker image...
       - docker build -t employee-department1 -f Docker/Dockerfile .
       - docker tag employee-department1:latest $ECR_REPO:$IMAGE_TAG
@@ -78,19 +81,25 @@ phases:
         }
         EOF
 
-      - echo Creating CloudWatch Log Group if not exists...
+      - echo Ensuring CloudWatch log group exists...
       - aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists"
 
       - echo Registering task definition...
       - aws ecs register-task-definition --cli-input-json file://taskdef.json --region $AWS_REGION
 
-      - echo Updating ECS service...
+      - echo Deploying to ECS...
       - |
         SERVICE_STATUS=$(aws ecs describe-services --cluster employee-cluster1 --services employee-service --region $AWS_REGION \
-                          --query 'services[0].status' --output text)
+                          --query 'services[0].status' --output text || echo "INACTIVE")
         if [[ "$SERVICE_STATUS" == "ACTIVE" ]]; then
-          aws ecs update-service --cluster employee-cluster1 --service employee-service --force-new-deployment --region $AWS_REGION
+          echo "Updating service with new task definition..."
+          aws ecs update-service \
+            --cluster employee-cluster1 \
+            --service employee-service \
+            --force-new-deployment \
+            --region $AWS_REGION
         else
+          echo "Creating new ECS Fargate service..."
           aws ecs create-service \
             --cluster employee-cluster1 \
             --service-name employee-service \
@@ -100,6 +109,7 @@ phases:
             --network-configuration "awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}" \
             --region $AWS_REGION
         fi
+
 artifacts:
   files:
     - taskdef.json
