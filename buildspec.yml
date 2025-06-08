@@ -9,6 +9,10 @@ env:
     LOG_GROUP: /ecs/employee-department1
     SONAR_PROJECT_KEY: employee-department-1
     SONAR_HOST_URL: http://sonarqube.sivendar.click:9000
+    CLUSTER_NAME: employee-cluster1
+    SERVICE_NAME: employee-service
+    SUBNET_IDS: subnet-0c06c9ba80675ca5b
+    SECURITY_GROUP_IDS: sg-03992897fd20860bd
 
   secrets-manager:
     SONAR_TOKEN: sonar_token
@@ -16,25 +20,24 @@ env:
 phases:
   install:
     runtime-versions:
-      java: corretto21  # Update to match <release>21 in pom.xml
+      java: corretto21
     commands:
-      - echo Installing dependencies...
+      - echo Installing Maven dependencies...
 
   pre_build:
     commands:
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
 
-      - echo Setting up Sonar Scanner...
-      - export PATH=$PATH:/root/.sonar/scanner/bin
+      - echo Running SonarQube analysis...
       - mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-        -Dsonar.projectKey=$SONAR_PROJECT_KEY \
-        -Dsonar.host.url=$SONAR_HOST_URL \
-        -Dsonar.login=$SONAR_TOKEN || echo "Sonar scan skipped"
+          -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+          -Dsonar.host.url=$SONAR_HOST_URL \
+          -Dsonar.login=$SONAR_TOKEN || echo "Sonar scan failed/skipped"
 
   build:
     commands:
-      - echo Building the project...
+      - echo Building the application...
       - mvn clean package -DskipTests
       - echo Building Docker image...
       - docker build -t employee-department1 -f Docker/Dockerfile .
@@ -43,15 +46,72 @@ phases:
 
   post_build:
     commands:
-      - echo Creating imagedefinitions.json...
-      - printf '[{"name":"employee-department1","imageUri":"%s"}]' "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
-      - echo Deploying to ECS...
+      - echo Creating task definition JSON...
       - |
-        aws ecs update-service \
-          --cluster employee-cluster1 \
-          --service employee-service \
-          --force-new-deployment \
-          --region $AWS_REGION
+        cat > taskdef.json <<EOF
+        {
+          "family": "employee-taskdef",
+          "networkMode": "awsvpc",
+          "requiresCompatibilities": ["FARGATE"],
+          "cpu": "512",
+          "memory": "1024",
+          "executionRoleArn": "${EXECUTION_ROLE_ARN}",
+          "containerDefinitions": [
+            {
+              "name": "employee-department1",
+              "image": "${ECR_REPO}:${IMAGE_TAG}",
+              "portMappings": [
+                {
+                  "containerPort": 8080,
+                  "protocol": "tcp"
+                }
+              ],
+              "essential": true,
+              "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                  "awslogs-group": "${LOG_GROUP}",
+                  "awslogs-region": "${AWS_REGION}",
+                  "awslogs-stream-prefix": "ecs"
+                }
+              }
+            }
+          ]
+        }
+        EOF
+
+      - echo Registering task definition...
+      - aws ecs register-task-definition --cli-input-json file://taskdef.json --region $AWS_REGION
+
+      - echo Checking ECS service status...
+      - |
+        SERVICE_STATUS=$(aws ecs describe-services \
+          --cluster $CLUSTER_NAME \
+          --services $SERVICE_NAME \
+          --region $AWS_REGION \
+          --query "services[0].status" \
+          --output text 2>/dev/null || echo "NOT_FOUND")
+
+        echo "Service status: $SERVICE_STATUS"
+
+        if [ "$SERVICE_STATUS" = "ACTIVE" ]; then
+          echo "Updating existing ECS service..."
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --force-new-deployment \
+            --region $AWS_REGION
+        else
+          echo "Creating new ECS service..."
+          aws ecs create-service \
+            --cluster $CLUSTER_NAME \
+            --service-name $SERVICE_NAME \
+            --task-definition employee-taskdef \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_IDS],securityGroups=[$SECURITY_GROUP_IDS],assignPublicIp=ENABLED}" \
+            --region $AWS_REGION
+        fi
 
 artifacts:
   files:
