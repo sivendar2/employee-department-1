@@ -43,8 +43,15 @@ phases:
 
   post_build:
     commands:
-      - echo Registering ECS Task Definition...
-      # Add ECS task register command here if needed
+      - echo Creating imagedefinitions.json...
+      - printf '[{"name":"employee-department1","imageUri":"%s"}]' "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
+      - echo Deploying to ECS...
+      - |
+        aws ecs update-service \
+          --cluster employee-cluster \
+          --service employee-department1-service \
+          --force-new-deployment \
+          --region $AWS_REGION
 
 artifacts:
   files:
