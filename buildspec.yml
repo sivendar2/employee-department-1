@@ -16,7 +16,7 @@ env:
 phases:
   install:
     runtime-versions:
-      java: corretto17
+      java: corretto21
       docker: 20
     commands:
       - echo Installing AWS CLI...
