@@ -11,19 +11,19 @@ env:
     SONAR_HOST_URL: http://sonarqube.sivendar.click:9000/
     CLUSTER_NAME: employee-cluster1
     SERVICE_NAME: employee-service
-    TASK_DEF_NAME: employee-taskdef
     SUBNET_ID: subnet-0c06c9ba80675ca5b
     SECURITY_GROUP_ID: sg-03992897fd20860bd
+    TASK_DEF_NAME: employee-taskdef
 
   secrets-manager:
-    SONAR_TOKEN: sonar_token  # Secrets Manager key
+    SONAR_TOKEN: sonar_token
 
 phases:
   install:
     runtime-versions:
       java: corretto17
     commands:
-      - echo Installing AWS CLI v2 if needed...
+      - echo Installing AWS CLI...
       - pip install --upgrade awscli
 
   pre_build:
@@ -31,17 +31,16 @@ phases:
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
 
-      - echo Running SonarQube Analysis...
+      - echo Running SonarQube analysis...
       - mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
           -Dsonar.projectKey=$SONAR_PROJECT_KEY \
           -Dsonar.host.url=$SONAR_HOST_URL \
-          -Dsonar.login=$SONAR_TOKEN || echo "Sonar analysis skipped or failed (non-blocking)"
+          -Dsonar.login=$SONAR_TOKEN || echo "Sonar analysis failed/skipped"
 
   build:
     commands:
       - echo Building application...
       - mvn clean package -DskipTests
-
       - echo Building Docker image...
       - docker build -t employee-department1 -f Docker/Dockerfile .
       - docker tag employee-department1:latest $ECR_REPO:$IMAGE_TAG
@@ -49,10 +48,10 @@ phases:
 
   post_build:
     commands:
-      - echo Creating CloudWatch log group if not exists...
-      - aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists"
+      - echo Creating CloudWatch log group...
+      - aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group exists"
 
-      - echo Registering ECS task definition...
+      - echo Registering ECS Task Definition...
       - |
         cat <<EOF > taskdef.json
 {
@@ -88,18 +87,18 @@ EOF
 
       - aws ecs register-task-definition --cli-input-json file://taskdef.json --region $AWS_REGION
 
-      - echo Checking if ECS service exists...
+      - echo Checking ECS service status...
       - |
         SERVICE_STATUS=$(aws ecs describe-services \
           --cluster $CLUSTER_NAME \
           --services $SERVICE_NAME \
-          --region $AWS_REGION \
           --query "services[0].status" \
-          --output text 2>/dev/null || echo "None")
+          --output text \
+          --region $AWS_REGION || echo "None")
 
         echo "Service status: $SERVICE_STATUS"
 
-        if [ "$SERVICE_STATUS" = "ACTIVE" ]; then
+        if [[ "$SERVICE_STATUS" == "ACTIVE" ]]; then
           echo "Updating ECS service..."
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
