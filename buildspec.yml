@@ -48,8 +48,8 @@ phases:
       - echo Deploying to ECS...
       - |
         aws ecs update-service \
-          --cluster employee-cluster \
-          --service employee-department1-service \
+          --cluster employee-cluster1 \
+          --service employee-service \
           --force-new-deployment \
           --region $AWS_REGION
 
