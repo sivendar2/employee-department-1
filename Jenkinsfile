@@ -11,17 +11,17 @@ env:
     SONAR_HOST_URL: http://sonarqube.sivendar.click:9000/
     CLUSTER_NAME: employee-cluster1
     SERVICE_NAME: employee-service
+    TASK_DEF_NAME: employee-taskdef
     SUBNET_ID: subnet-0c06c9ba80675ca5b
     SECURITY_GROUP_ID: sg-03992897fd20860bd
 
   secrets-manager:
-    SONAR_TOKEN: sonar_token  # Replace with your actual Secrets Manager secret name
+    SONAR_TOKEN: sonar_token  # Secrets Manager key
 
 phases:
   install:
     runtime-versions:
       java: corretto17
-      docker: 20
     commands:
       - echo Installing AWS CLI v2 if needed...
       - pip install --upgrade awscli
@@ -49,42 +49,43 @@ phases:
 
   post_build:
     commands:
-      - echo Ensuring CloudWatch Log Group exists...
+      - echo Creating CloudWatch log group if not exists...
       - aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists"
 
-      - echo Registering ECS Task Definition...
+      - echo Registering ECS task definition...
       - |
-        cat > taskdef.json <<EOF
+        cat <<EOF > taskdef.json
+{
+  "family": "$TASK_DEF_NAME",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "$EXECUTION_ROLE_ARN",
+  "containerDefinitions": [
+    {
+      "name": "employee-department1",
+      "image": "$ECR_REPO:$IMAGE_TAG",
+      "portMappings": [
         {
-          "family": "employee-taskdef",
-          "networkMode": "awsvpc",
-          "requiresCompatibilities": ["FARGATE"],
-          "cpu": "512",
-          "memory": "1024",
-          "executionRoleArn": "${EXECUTION_ROLE_ARN}",
-          "containerDefinitions": [
-            {
-              "name": "employee-department1",
-              "image": "${ECR_REPO}:${IMAGE_TAG}",
-              "portMappings": [
-                {
-                  "containerPort": 8080,
-                  "protocol": "tcp"
-                }
-              ],
-              "essential": true,
-              "logConfiguration": {
-                "logDriver": "awslogs",
-                "options": {
-                  "awslogs-group": "${LOG_GROUP}",
-                  "awslogs-region": "${AWS_REGION}",
-                  "awslogs-stream-prefix": "ecs"
-                }
-              }
-            }
-          ]
+          "containerPort": 8080,
+          "protocol": "tcp"
         }
-        EOF
+      ],
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "$LOG_GROUP",
+          "awslogs-region": "$AWS_REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+EOF
+
       - aws ecs register-task-definition --cli-input-json file://taskdef.json --region $AWS_REGION
 
       - echo Checking if ECS service exists...
@@ -92,13 +93,13 @@ phases:
         SERVICE_STATUS=$(aws ecs describe-services \
           --cluster $CLUSTER_NAME \
           --services $SERVICE_NAME \
+          --region $AWS_REGION \
           --query "services[0].status" \
-          --output text \
-          --region $AWS_REGION || echo "None")
+          --output text 2>/dev/null || echo "None")
 
         echo "Service status: $SERVICE_STATUS"
 
-        if [[ "$SERVICE_STATUS" == "ACTIVE" ]]; then
+        if [ "$SERVICE_STATUS" = "ACTIVE" ]; then
           echo "Updating ECS service..."
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
@@ -110,7 +111,7 @@ phases:
           aws ecs create-service \
             --cluster $CLUSTER_NAME \
             --service-name $SERVICE_NAME \
-            --task-definition employee-taskdef \
+            --task-definition $TASK_DEF_NAME \
             --desired-count 1 \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}" \
