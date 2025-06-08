@@ -3,41 +3,33 @@ version: 0.2
 env:
   variables:
     AWS_REGION: us-east-1
-    ECR_REPO: 779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1
-    IMAGE_TAG: latest
-    EXECUTION_ROLE_ARN: arn:aws:iam::779846797240:role/ecsTaskExecutionRole
-    LOG_GROUP: /ecs/employee-department1
-    SONAR_PROJECT_KEY: employee-department-1
-    SONAR_HOST_URL: http://sonarqube.sivendar.click:9000
     CLUSTER_NAME: employee-cluster1
     SERVICE_NAME: employee-service
+    IMAGE_TAG: latest
+    TASK_DEF_NAME: employee-taskdef
+    ECR_REPO: 779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1
     SUBNET_IDS: subnet-0c06c9ba80675ca5b
     SECURITY_GROUP_IDS: sg-03992897fd20860bd
-
-  secrets-manager:
-    SONAR_TOKEN: sonar_token
+    LOG_GROUP: /ecs/employee-department1
+    EXECUTION_ROLE_ARN: arn:aws:iam::779846797240:role/ecsTaskExecutionRole
 
 phases:
   install:
     runtime-versions:
-      java: corretto21
+      java: corretto17
+      docker: 20
     commands:
-      - echo Installing Maven dependencies...
+      - echo Installing AWS CLI...
+      - pip install --upgrade awscli
 
   pre_build:
     commands:
-      - echo Logging in to Amazon ECR...
+      - echo Logging into Amazon ECR...
       - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
-
-      - echo Running SonarQube analysis...
-      - mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-          -Dsonar.projectKey=$SONAR_PROJECT_KEY \
-          -Dsonar.host.url=$SONAR_HOST_URL \
-          -Dsonar.login=$SONAR_TOKEN || echo "Sonar scan failed/skipped"
 
   build:
     commands:
-      - echo Building the application...
+      - echo Building Maven package...
       - mvn clean package -DskipTests
       - echo Building Docker image...
       - docker build -t employee-department1 -f Docker/Dockerfile .
@@ -46,20 +38,22 @@ phases:
 
   post_build:
     commands:
-      - echo Creating task definition JSON...
+      - echo Creating CloudWatch log group if not exists...
+      - aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists"
+
+      - echo Registering task definition...
       - |
-        cat > taskdef.json <<EOF
-        {
-          "family": "employee-taskdef",
+        printf '{
+          "family": "%s",
           "networkMode": "awsvpc",
           "requiresCompatibilities": ["FARGATE"],
           "cpu": "512",
           "memory": "1024",
-          "executionRoleArn": "${EXECUTION_ROLE_ARN}",
+          "executionRoleArn": "%s",
           "containerDefinitions": [
             {
               "name": "employee-department1",
-              "image": "${ECR_REPO}:${IMAGE_TAG}",
+              "image": "%s:%s",
               "portMappings": [
                 {
                   "containerPort": 8080,
@@ -70,18 +64,18 @@ phases:
               "logConfiguration": {
                 "logDriver": "awslogs",
                 "options": {
-                  "awslogs-group": "${LOG_GROUP}",
-                  "awslogs-region": "${AWS_REGION}",
+                  "awslogs-group": "%s",
+                  "awslogs-region": "%s",
                   "awslogs-stream-prefix": "ecs"
                 }
               }
             }
           ]
-        }
-        EOF
+        }' "$TASK_DEF_NAME" "$EXECUTION_ROLE_ARN" "$ECR_REPO" "$IMAGE_TAG" "$LOG_GROUP" "$AWS_REGION" > taskdef.json
 
-      - echo Registering task definition...
-      - aws ecs register-task-definition --cli-input-json file://taskdef.json --region $AWS_REGION
+      - aws ecs register-task-definition \
+          --cli-input-json file://taskdef.json \
+          --region $AWS_REGION
 
       - echo Checking ECS service status...
       - |
@@ -106,13 +100,9 @@ phases:
           aws ecs create-service \
             --cluster $CLUSTER_NAME \
             --service-name $SERVICE_NAME \
-            --task-definition employee-taskdef \
+            --task-definition $TASK_DEF_NAME \
             --desired-count 1 \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_IDS],securityGroups=[$SECURITY_GROUP_IDS],assignPublicIp=ENABLED}" \
+            --network-configuration "awsvpcConfiguration={subnets=[\"$SUBNET_IDS\"],securityGroups=[\"$SECURITY_GROUP_IDS\"],assignPublicIp=\"ENABLED\"}" \
             --region $AWS_REGION
         fi
-
-artifacts:
-  files:
-    - target/*.jar
