@@ -17,7 +17,6 @@ phases:
   install:
     runtime-versions:
       java: corretto21
-      docker: 20
     commands:
       - echo Installing AWS CLI...
       - pip install --upgrade awscli
