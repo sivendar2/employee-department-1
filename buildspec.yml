@@ -11,7 +11,7 @@ env:
     SONAR_HOST_URL: http://sonarqube.sivendar.click:9000
 
   secrets-manager:
-    SONAR_TOKEN: sonar-token-jenkins  # Assumes SONAR_TOKEN stored in AWS Secrets Manager
+    SONAR_TOKEN: sonar_token  # Assumes SONAR_TOKEN stored in AWS Secrets Manager
 
 phases:
   install:
