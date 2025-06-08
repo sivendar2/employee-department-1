@@ -18,8 +18,11 @@ phases:
     runtime-versions:
       java: corretto21
     commands:
-      - echo Installing AWS CLI...
-      - pip install --upgrade awscli
+      - echo Installing AWS CLI v2...
+      - curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+      - unzip -q awscliv2.zip
+      - sudo ./aws/install
+      - export PATH=/usr/local/bin:$PATH
 
   pre_build:
     commands:
@@ -28,11 +31,12 @@ phases:
 
   build:
     commands:
-      - echo Building Maven package...
+      - echo Building Maven project...
       - mvn clean package -DskipTests
       - echo Building Docker image...
       - docker build -t employee-department1 -f Docker/Dockerfile .
       - docker tag employee-department1:latest $ECR_REPO:$IMAGE_TAG
+      - echo Pushing Docker image to ECR...
       - docker push $ECR_REPO:$IMAGE_TAG
 
   post_build:
@@ -40,38 +44,41 @@ phases:
       - echo Creating CloudWatch log group if not exists...
       - aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists"
 
-      - echo Registering task definition...
+      - echo Registering ECS task definition...
       - |
-        printf '{
-          "family": "%s",
-          "networkMode": "awsvpc",
-          "requiresCompatibilities": ["FARGATE"],
-          "cpu": "512",
-          "memory": "1024",
-          "executionRoleArn": "%s",
-          "containerDefinitions": [
-            {
-              "name": "employee-department1",
-              "image": "%s:%s",
-              "portMappings": [
-                {
-                  "containerPort": 8080,
-                  "protocol": "tcp"
-                }
-              ],
-              "essential": true,
-              "logConfiguration": {
-                "logDriver": "awslogs",
-                "options": {
-                  "awslogs-group": "%s",
-                  "awslogs-region": "%s",
-                  "awslogs-stream-prefix": "ecs"
-                }
-              }
-            }
-          ]
-        }' "$TASK_DEF_NAME" "$EXECUTION_ROLE_ARN" "$ECR_REPO" "$IMAGE_TAG" "$LOG_GROUP" "$AWS_REGION" > taskdef.json
+        cat <<EOF > taskdef.json
+{
+  "family": "$TASK_DEF_NAME",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "$EXECUTION_ROLE_ARN",
+  "containerDefinitions": [
+    {
+      "name": "employee-department1",
+      "image": "$ECR_REPO:$IMAGE_TAG",
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "$LOG_GROUP",
+          "awslogs-region": "$AWS_REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+EOF
 
+      - cat taskdef.json
       - aws ecs register-task-definition \
           --cli-input-json file://taskdef.json \
           --region $AWS_REGION
@@ -88,14 +95,14 @@ phases:
         echo "Service status: $SERVICE_STATUS"
 
         if [ "$SERVICE_STATUS" = "ACTIVE" ]; then
-          echo "Updating existing ECS service..."
+          echo "Updating ECS service..."
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
             --service $SERVICE_NAME \
             --force-new-deployment \
             --region $AWS_REGION
         else
-          echo "Creating new ECS service..."
+          echo "Creating ECS service..."
           aws ecs create-service \
             --cluster $CLUSTER_NAME \
             --service-name $SERVICE_NAME \
