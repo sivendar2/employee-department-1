@@ -11,12 +11,12 @@ env:
     SONAR_HOST_URL: http://sonarqube.sivendar.click:9000
 
   secrets-manager:
-    SONAR_TOKEN: sonar_token  # Assumes SONAR_TOKEN stored in AWS Secrets Manager
+    SONAR_TOKEN: sonar_token
 
 phases:
   install:
     runtime-versions:
-      java: corretto21
+      java: corretto21  # Update to match <release>21 in pom.xml
     commands:
       - echo Installing dependencies...
 
@@ -30,7 +30,7 @@ phases:
       - mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
         -Dsonar.projectKey=$SONAR_PROJECT_KEY \
         -Dsonar.host.url=$SONAR_HOST_URL \
-        -Dsonar.login=$SONAR_TOKEN || echo "Sonar scan skipped (optional for build failure tolerance)"
+        -Dsonar.login=$SONAR_TOKEN || echo "Sonar scan skipped"
 
   build:
     commands:
@@ -44,4 +44,8 @@ phases:
   post_build:
     commands:
       - echo Registering ECS Task Definition...
-      # Your ECS deployment commands...
+      # Add ECS task register command here if needed
+
+artifacts:
+  files:
+    - target/*.jar
