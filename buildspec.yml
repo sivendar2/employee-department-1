@@ -87,12 +87,19 @@ phases:
 
       - echo Checking ECS service status...
       - |
+        set +e
         SERVICE_STATUS=$(aws ecs describe-services \
           --cluster $CLUSTER_NAME \
           --services $SERVICE_NAME \
           --query "services[0].status" \
           --output text \
-          --region $AWS_REGION || echo "None")
+          --region $AWS_REGION 2>/dev/null)
+        EXIT_CODE=$?
+        set -e
+
+        if [ $EXIT_CODE -ne 0 ] || [ "$SERVICE_STATUS" == "None" ]; then
+          SERVICE_STATUS="None"
+        fi
 
         echo "Service status: $SERVICE_STATUS"
 
