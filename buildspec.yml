@@ -21,7 +21,7 @@ env:
 phases:
   install:
     runtime-versions:
-      java: corretto20
+      java: corretto21
     commands:
       - echo Installing AWS CLI...
       - pip install --upgrade awscli
