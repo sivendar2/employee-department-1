@@ -1,11 +1,10 @@
 package com.ameya.controller;
 
 import com.ameya.entity.Employee;
+import com.ameya.repository.EmployeeRepository;
 import com.ameya.service.EmployeeInfoBusinessService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -14,11 +13,20 @@ import java.util.List;
 public class EmployeeController {
 
     private final EmployeeInfoBusinessService employeeService;
+    private EmployeeRepository employeeRepository;
 
-    public EmployeeController(EmployeeInfoBusinessService employeeService) {
+    @Autowired
+    public EmployeeController(EmployeeInfoBusinessService employeeService,EmployeeRepository empRepo) {
         this.employeeService = employeeService;
+        this.employeeRepository = empRepo;
+
     }
 
+
+    @PostMapping
+    public Employee createEmployee(@RequestBody Employee employee) {
+        return employeeRepository.save(employee);
+    }
     @GetMapping("/by-department/{departmentName}")
     public List<Employee> getEmployeesByDepartmentSortedByName(@PathVariable String departmentName) {
         return employeeService.getEmployeesByDepartmentSortedByName(departmentName);
