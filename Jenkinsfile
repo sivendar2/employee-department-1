@@ -18,6 +18,38 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
             }
         }
+                stage('Dependency Scan - OWASP') {
+            steps {
+                sh 'mvn org.owasp:dependency-check-maven:check'
+            }
+        }
+
+        stage('Dependency Scan - Snyk') {
+            steps {
+                sh 'snyk test || true'  // Optional fail-safe if snyk finds issues
+            }
+        }
+
+        stage('Auto Upgrade Vulnerable Dependencies') {
+            steps {
+                sh 'mvn versions:use-latest-releases -DgenerateBackupPoms=false'
+            }
+        }
+
+        stage('Commit Updated Dependencies') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+                    sh '''
+                        git config --global user.email "sivendarp2023@gmail.com"
+                        git config --global user.name "sivendarp2023@gmail.com"
+                        git add pom.xml
+                        git commit -m "Auto-upgrade vulnerable dependencies"
+                        git push https://${GIT_USER}:${GIT_PASS}@github.com/sivendar2/employee-department-1.git HEAD:main || echo "No changes to commit"
+                    '''
+                }
+            }
+        }
+
 
         stage('SonarQube Analysis') {
             steps {
