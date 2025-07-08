@@ -56,6 +56,45 @@ pipeline {
     }
 }
 
+        stage('SAST - Semgrep Scan') {
+            steps {
+                sh '''
+                    semgrep scan --config auto --json > semgrep-report.json || true
+                '''
+            }
+        }
+
+        stage('Semgrep Autofix') {
+            steps {
+                sh '''
+                    semgrep scan --config auto --autofix || true
+                '''
+            }
+        }
+
+        stage('Create SAST Fix PR') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+                    sh '''
+                        set -e
+                        git config --global user.name "$GIT_USER"
+                        git config --global user.email "$GIT_USER@users.noreply.github.com"
+
+                        BRANCH_NAME="fix/sast-autofix-$(date +%s)"
+                        git checkout -b "$BRANCH_NAME"
+                        git add .
+                        git diff --cached --quiet || git commit -m "chore: auto-remediation for SAST issues"
+                        git push https://$GIT_USER:$GIT_PASS@github.com/sivendar2/employee-department-1.git "$BRANCH_NAME"
+
+                        gh pr create \
+                          --base main \
+                          --head "$BRANCH_NAME" \
+                          --title "SAST: Auto-fixed issues using Semgrep" \
+                          --body "This PR includes automated fixes for static code analysis issues. Please review before merging."
+                    '''
+                }
+            }
+        }
 
 
         stage('SonarQube Analysis') {
