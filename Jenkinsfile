@@ -36,9 +36,10 @@ pipeline {
             }
         }
 
-        stage('Commit Updated Dependencies') {
+        stage('Commit Updated Dependencies') 
+        {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: '51955cf3-d8a9-43fd-9ac4-a60a4bba201c', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
                     sh '''
                         git config --global user.email "sivendarp2023@gmail.com"
                         git config --global user.name "sivendarp2023@gmail.com"
