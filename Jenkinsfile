@@ -36,10 +36,10 @@ pipeline {
             }
         }
 
-       stage('Commit Updated Dependencies') {
+     stage('Commit Updated Dependencies') {
     steps {
         withCredentials([usernamePassword(
-            credentialsId: '51955cf3-d8a9-43fd-9ac4-a60a4bba201c',
+            credentialsId: 'git-cred-id',
             usernameVariable: 'GIT_USER',
             passwordVariable: 'GIT_PASS'
         )]) {
