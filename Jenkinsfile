@@ -36,27 +36,26 @@ pipeline {
             }
         }
 
-        stage('Commit Updated Dependencies') 
-        {
-            steps {
-                withCredentials([usernamePassword(
-                credentialsId: '51955cf3-d8a9-43fd-9ac4-a60a4bba201c',
-                usernameVariable: 'GIT_USER',
-                passwordVariable: 'GIT_PASS'
+       stage('Commit Updated Dependencies') {
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: '51955cf3-d8a9-43fd-9ac4-a60a4bba201c',
+            usernameVariable: 'GIT_USER',
+            passwordVariable: 'GIT_PASS'
         )]) {
-    sh '''
-        git config --global user.name "$GIT_USER"
-        git config --global user.email "$GIT_USER"
+            sh '''
+                git config --global user.name "$GIT_USER"
+                git config --global user.email "$GIT_USER@users.noreply.github.com"
 
-        git add pom.xml
-        git commit -m "Auto-upgrade vulnerable dependencies" || echo "No changes to commit"
+                git add pom.xml
+                git commit -m "Auto-upgrade vulnerable dependencies" || echo "No changes to commit"
 
-        git push https://$GIT_USER:$GIT_PASS@github.com/sivendar2/employee-department-1.git HEAD:main
-    '''
+                git push https://$GIT_USER:$GIT_PASS@github.com/sivendar2/employee-department-1.git HEAD:main
+            '''
+        }
+    }
 }
 
-            }
-        }
 
 
         stage('SonarQube Analysis') {
