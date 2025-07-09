@@ -62,25 +62,50 @@ pipeline {
             }
         }
 
-        stage('Semgrep Scan & Autofix') {
-            steps {
-                script {
-                    sh '''
-                        set +e
-                        semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json
-                        SEMGREP_EXIT_CODE=$?
-                        set -e
-                        if [ "$SEMGREP_EXIT_CODE" -ne 0 ]; then
-                            echo "Semgrep scan failed with exit code $SEMGREP_EXIT_CODE"
-                            exit $SEMGREP_EXIT_CODE
-                        else
-                            echo "Semgrep scan and autofix completed successfully."
-                        fi
-                    '''
-                    archiveArtifacts artifacts: 'semgrep-report.json', onlyIfSuccessful: true
-                }
-            }
+stage('Semgrep Scan & Autofix') {
+    steps {
+        script {
+            sh '''
+                echo "[INFO] Starting Semgrep scan with autofix..."
+
+                # Ensure jq exists for JSON parsing if needed later
+                if ! command -v jq &> /dev/null; then
+                    echo "[WARN] jq is not installed. Skipping JSON pretty print."
+                fi
+
+                # Verify semgrep config file exists
+                if [ ! -f .semgrep/sql-injection-autofix.yml ]; then
+                    echo "[ERROR] Semgrep config file missing: .semgrep/sql-injection-autofix.yml"
+                    exit 1
+                fi
+
+                # Run semgrep with autofix and capture exit code
+                set +e
+                semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json
+                SEMGREP_EXIT_CODE=$?
+                set -e
+
+                # Check if report was actually created
+                if [ ! -s semgrep-report.json ]; then
+                    echo "[ERROR] Semgrep did not generate a report. Possible failure or no findings."
+                    exit 1
+                fi
+
+                # Show result or error
+                if [ "$SEMGREP_EXIT_CODE" -ne 0 ]; then
+                    echo "[ERROR] Semgrep scan failed with exit code $SEMGREP_EXIT_CODE"
+                    cat semgrep-report.json || echo "[INFO] Report file unreadable"
+                    exit $SEMGREP_EXIT_CODE
+                else
+                    echo "[INFO] Semgrep scan and autofix completed successfully."
+                fi
+            '''
+
+            // Archive results so they are available after build
+            archiveArtifacts artifacts: 'semgrep-report.json', allowEmptyArchive: true
         }
+    }
+}
 
         stage('Create SAST Fix PR') {
             steps {
