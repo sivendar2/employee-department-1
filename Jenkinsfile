@@ -19,18 +19,6 @@ pipeline {
             }
         }
 
-        stage('Install Semgrep') {
-            steps {
-                sh '''
-                   python -m pip install --upgrade pip
-                   python -m pip install --user semgrep
-                   export PATH=$PATH:~/.local/bin
-                   semgrep --version
-
-                '''
-            }
-        }
-
         stage('Verify Semgrep Rule') {
             steps {
                 sh 'ls -l .semgrep/sql-injection-autofix.yml'
