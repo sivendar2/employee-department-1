@@ -36,7 +36,7 @@ stage('Configure Semgrep PATH on Windows') {
         stage('Semgrep Scan Without Autofix (Debug)') {
             steps {
                 sh '''
-                    semgrep scan --config .semgrep/sql-injection-autofix.yml --json > semgrep-no-fix.json
+                    "C:\\Users\\test\\AppData\\Local\\Programs\\Python\\Python313\\Scripts\\semgrep.exe" scan --config .semgrep/sql-injection-autofix.yml --json > semgrep-no-fix.json
                     echo "Semgrep scan (no autofix) exit code: $?"
                     head -40 semgrep-no-fix.json || echo "Report file empty or missing"
                 '''
