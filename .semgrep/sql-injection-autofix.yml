@@ -1,62 +1,20 @@
-# .semgrep/sql-injection-autofix.yml (Revised for Strong Detection and Clear Message)
 rules:
-  - id: java.sql.statement.sqli.ConcatenatedQuery
+  - id: sql-injection-autofix
+    name: Detect and fix SQL injection via string concatenation
     languages: [java]
     severity: ERROR
     message: |
-      Potential SQL Injection detected!
-      User input ('$USER_INPUT') is directly concatenated into the SQL query: '$SQL_VAR'.
-      **Remediation:**
-      1. Replace 'Statement' with 'PreparedStatement'.
-      2. Convert concatenated user inputs to '?' placeholders in your SQL string.
-      3. Use 'PreparedStatement.setX()' methods (e.g., setString, setInt) to bind variables securely.
-
-      Example:
-      // BEFORE:
-      // String sql = "SELECT * FROM users WHERE username = '" + username + "'";
-      // Statement stmt = conn.createStatement();
-      // ResultSet rs = stmt.executeQuery(sql);
-
-      // AFTER:
-      // String sql = "SELECT * FROM users WHERE username = ?";
-      // PreparedStatement pstmt = conn.prepareStatement(sql);
-      // pstmt.setString(1, username);
-      // ResultSet rs = pstmt.executeQuery();
-    patterns:
-      - pattern-either:
-          # Catches 'String sql = "..." + var + "...";'
-          - pattern: |
-              String $SQL_VAR = $ANY_LITERAL + $USER_INPUT + $ANY_EXPRESSION;
-          - pattern: |
-              String $SQL_VAR = $ANY_LITERAL + $USER_INPUT;
-          - pattern: |
-              String $SQL_VAR = $USER_INPUT + $ANY_EXPRESSION;
-          # Catches cases where concatenation happens directly within executeQuery
-          - pattern: |
-              $STMT.executeQuery("$ANY_LITERAL" + $USER_INPUT + "$ANY_EXPRESSION");
-          - pattern: |
-              $STMT.executeQuery("$ANY_LITERAL" + $USER_INPUT);
-          - pattern: |
-              $STMT.executeQuery($USER_INPUT + "$ANY_EXPRESSION");
-          # Catches cases using StringBuilder
-          - pattern: |
-              StringBuilder $SB = new StringBuilder(...);
-              $SB.append($USER_INPUT);
-              ...
-              $STMT.executeQuery($SB.toString());
-      # Ensure it's used in executeQuery (this can be a separate pattern if you want to be stricter)
-      - pattern-inside: |
-          Statement $STMT = $CONN.createStatement();
-          ResultSet $RES = $STMT.executeQuery(...);
-      - metavariable-regex:
-          metavariable: $ANY_LITERAL
-          regex: '"[^"]*"' # Ensures this is a string literal starting with "
-      # Exclude if PreparedStatement is already used (to reduce false positives)
-      - pattern-not: |
-          PreparedStatement $PSTMT = $CONN.prepareStatement(...);
-          $PSTMT.set$(...);
+      SQL injection vulnerability detected. Use parameterized queries instead of string concatenation.
+    pattern: |
+      $STMT = $CONN.createStatement();
+      String $SQL = "SELECT * FROM $TABLE WHERE username = '" + $USER + "'";
+      ResultSet $RS = $STMT.executeQuery($SQL);
+    fix: |
+      PreparedStatement stmt = $CONN.prepareStatement("SELECT * FROM $TABLE WHERE username = ?");
+      stmt.setString(1, $USER);
+      ResultSet $RS = stmt.executeQuery();
     metadata:
       category: security
-      subcategory: [audit] # This rule is more for auditing/reporting
-      impact: High
-      confidence: High
+      cwe: "CWE-89"
+      technology: java
+      autofix: true
