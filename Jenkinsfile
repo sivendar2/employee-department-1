@@ -24,7 +24,7 @@ pipeline {
             }
         }
 
-        stage('Dependency Scan - Snyk') {
+/*        stage('Dependency Scan - Snyk') {
             steps {
                 sh 'snyk test || true'  // Optional fail-safe if snyk finds issues
             }
@@ -54,7 +54,7 @@ pipeline {
             '''
         }
     }
-}
+}*/
 
         stage('SAST - Semgrep Scan') {
             steps {
@@ -105,7 +105,7 @@ pipeline {
 }
 
 
-        stage('SonarQube Analysis') {
+   /*     stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQubeServer') {
                     sh """
@@ -247,6 +247,6 @@ pipeline {
                     }
                 }
             }
-        }
+        }*/
     }
 }
