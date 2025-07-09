@@ -18,6 +18,14 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
             }
         }
+stage('Configure Semgrep PATH on Windows') {
+    steps {
+        bat '''
+            set "PATH=%PATH%;C:\\Users\\test\\AppData\\Local\\Programs\\Python\\Python313\\Scripts"
+            semgrep --version
+        '''
+    }
+}
 
         stage('Verify Semgrep Rule') {
             steps {
