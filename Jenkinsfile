@@ -56,69 +56,63 @@ pipeline {
     }
 }*/
 
-       stage('Verify Semgrep Rule') {
-  steps {
-    sh 'ls -l .semgrep/sql-injection-autofix.yml'
-  }
-}
-
-stage('Semgrep Scan & Autofix') {
-    steps {
-        script {
-            def semgrepStatus = sh(
-                script: '''
-                    set -e
-                    semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json || echo "semgrep failed"
-                ''',
-                returnStatus: true
-            )
-
-            // Print status to console
-            if (semgrepStatus != 0) {
-                echo 'Semgrep scan/autofix encountered errors. Please check semgrep-report.json for details.'
-            } else {
-                echo 'Semgrep scan and autofix completed successfully.'
+    stage('Verify Semgrep Rule') {
+            steps {
+                sh 'ls -l .semgrep/sql-injection-autofix.yml'
             }
-
-            // Archive the results (optional)
-            archiveArtifacts artifacts: 'semgrep-report.json', onlyIfSuccessful: true
         }
-    }
-}
 
+        stage('Semgrep Scan & Autofix') {
+            steps {
+                script {
+                    sh '''
+                        set +e
+                        semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json
+                        SEMGREP_EXIT_CODE=$?
+                        set -e
+                        if [ "$SEMGREP_EXIT_CODE" -ne 0 ]; then
+                            echo "Semgrep scan failed with exit code $SEMGREP_EXIT_CODE"
+                            exit $SEMGREP_EXIT_CODE
+                        else
+                            echo "Semgrep scan and autofix completed successfully."
+                        fi
+                    '''
+                    archiveArtifacts artifacts: 'semgrep-report.json', onlyIfSuccessful: true
+                }
+            }
+        }
 
-stage('Create SAST Fix PR') {
-  steps {
-    withCredentials([
-      usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS'),
-      string(credentialsId: 'gh-token', variable: 'GH_TOKEN')
-    ]) {
-      bat '''
-        @echo off
-        setlocal enabledelayedexpansion
+        stage('Create SAST Fix PR') {
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS'),
+                    string(credentialsId: 'gh-token', variable: 'GH_TOKEN')
+                ]) {
+                    bat '''
+                        @echo off
+                        setlocal enabledelayedexpansion
 
-        git config --global user.name "%GIT_USER%"
-        git config --global user.email "%GIT_USER%@users.noreply.github.com"
+                        git config --global user.name "%GIT_USER%"
+                        git config --global user.email "%GIT_USER%@users.noreply.github.com"
 
-        for /f %%i in ('powershell -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+                        for /f %%i in ('powershell -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
 
-        git checkout -b !BRANCH_NAME!
-        git add .
-        git diff --cached --quiet || git commit -m "chore: auto-remediation for SAST issues"
-        git push https://%GIT_USER%:%GIT_PASS%@github.com/sivendar2/employee-department-1.git !BRANCH_NAME!
+                        git checkout -b !BRANCH_NAME!
+                        git add .
+                        git diff --cached --quiet || git commit -m "chore: auto-remediation for SAST issues"
+                        git push https://%GIT_USER%:%GIT_PASS%@github.com/sivendar2/employee-department-1.git !BRANCH_NAME!
 
-        gh pr create ^
-          --base main ^
-          --head !BRANCH_NAME! ^
-          --title "SAST: Auto-fixed issues using Semgrep" ^
-          --body "This PR includes automated fixes for static code analysis issues. Please review before merging."
+                        gh pr create ^
+                          --base main ^
+                          --head !BRANCH_NAME! ^
+                          --title "SAST: Auto-fixed issues using Semgrep" ^
+                          --body "This PR includes automated fixes for static code analysis issues. Please review before merging."
 
-        endlocal
-      '''
-    }
-  }
-}
-
+                        endlocal
+                    '''
+                }
+            }
+        }
    /*     stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQubeServer') {
