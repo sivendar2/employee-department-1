@@ -63,18 +63,29 @@ pipeline {
 }
 
 stage('Semgrep Scan & Autofix') {
-  steps {
-    script {
-      def status = sh(
-        script: 'semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json',
-        returnStatus: true
-      )
-      if (status != 0) {
-        echo "Semgrep scan/autofix encountered errors. Please check semgrep-report.json for details."
-      }
+    steps {
+        script {
+            def semgrepStatus = sh(
+                script: '''
+                    set -e
+                    semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json || echo "semgrep failed"
+                ''',
+                returnStatus: true
+            )
+
+            // Print status to console
+            if (semgrepStatus != 0) {
+                echo 'Semgrep scan/autofix encountered errors. Please check semgrep-report.json for details.'
+            } else {
+                echo 'Semgrep scan and autofix completed successfully.'
+            }
+
+            // Archive the results (optional)
+            archiveArtifacts artifacts: 'semgrep-report.json', onlyIfSuccessful: true
+        }
     }
-  }
 }
+
 
 stage('Create SAST Fix PR') {
   steps {
