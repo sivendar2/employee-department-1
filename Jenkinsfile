@@ -18,7 +18,7 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
             }
         }
-             /*   stage('Dependency Scan - OWASP') {
+                stage('Dependency Scan - OWASP') {
             steps {
                 sh 'mvn org.owasp:dependency-check-maven:check'
             }
@@ -54,7 +54,7 @@ pipeline {
             '''
         }
     }
-}*/
+}
 
         stage('SAST - Semgrep Scan') {
             steps {
