@@ -74,7 +74,10 @@ pipeline {
 
         stage('Create SAST Fix PR') {
     steps {
-        withCredentials([usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+        withCredentials([
+    usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS'),
+    string(credentialsId: 'gh-token', variable: 'GH_TOKEN') // this line uses your new credential
+]) {
             bat '''
             @echo off
             setlocal enabledelayedexpansion
