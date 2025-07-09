@@ -67,7 +67,7 @@ pipeline {
         stage('Semgrep Autofix') {
             steps {
                 sh '''
-                    semgrep scan --config p/owasp-top-ten --autofix --json > semgrep-report.json || true
+                    semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json || true
                 '''
             }
         }
