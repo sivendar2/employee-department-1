@@ -9,7 +9,7 @@ pipeline {
         LOG_GROUP = '/ecs/employee-department1'
         SONAR_HOST_URL = 'http://sonarqube.sivendar.click:9000/'
         SONAR_PROJECT_KEY = 'employee-department-1'
-        SONAR_TOKEN = credentials('sonar-token-jenkins') // Jenkins Credentials ID for the Sonar token
+        SONAR_TOKEN = credentials('sonar-token-jenkins') // Jenkins Credentials ID
     }
 
     stages {
@@ -18,133 +18,67 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
             }
         }
-       /*         stage('Dependency Scan - OWASP') {
-            steps {
-                sh 'mvn org.owasp:dependency-check-maven:check'
-            }
-        }
 
-       stage('Dependency Scan - Snyk') {
-            steps {
-                sh 'snyk test || true'  // Optional fail-safe if snyk finds issues
-            }
-        }
-
-        stage('Auto Upgrade Vulnerable Dependencies') {
-            steps {
-                sh 'mvn versions:use-latest-releases -DgenerateBackupPoms=false'
-            }
-        }
-
-     stage('Commit Updated Dependencies') {
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'git-cred-id',
-            usernameVariable: 'GIT_USER',
-            passwordVariable: 'GIT_PASS'
-        )]) {
-            sh '''
-                git config --global user.name "$GIT_USER"
-                git config --global user.email "$GIT_USER@users.noreply.github.com"
-
-                git add pom.xml
-                git commit -m "Auto-upgrade vulnerable dependencies" || echo "No changes to commit"
-
-                git push https://$GIT_USER:$GIT_PASS@github.com/sivendar2/employee-department-1.git HEAD:main
-            '''
-        }
-    }
-}*/
         stage('Install Semgrep') {
-  steps {
-    sh '''
-      pip install --user semgrep
-      export PATH=$PATH:~/.local/bin
-      semgrep --version
-    '''
-  }
-}
+            steps {
+                sh '''
+                    python3 -m pip install --upgrade pip
+                    python3 -m pip install --user semgrep
+                    export PATH=$PATH:~/.local/bin
+                    semgrep --version
+                '''
+            }
+        }
 
-
-    stage('Verify Semgrep Rule') {
+        stage('Verify Semgrep Rule') {
             steps {
                 sh 'ls -l .semgrep/sql-injection-autofix.yml'
             }
         }
 
-        stage('Debug Semgrep Environment') {
-  steps {
-    sh '''
-      echo "[INFO] Semgrep version:"
-      semgrep --version || echo "Semgrep not found or failed"
-
-      echo "[INFO] .semgrep directory contents:"
-      ls -l .semgrep || echo ".semgrep directory missing"
-
-      echo "[INFO] Showing semgrep config file content:"
-      cat .semgrep/sql-injection-autofix.yml || echo "Config file missing"
-
-      echo "[INFO] Running semgrep scan WITHOUT autofix:"
-      semgrep scan --config .semgrep/sql-injection-autofix.yml --json > semgrep-test.json 2>&1
-      SEMGREP_EXIT_CODE=$?
-      echo "[INFO] semgrep exit code: $SEMGREP_EXIT_CODE"
-      if [ $SEMGREP_EXIT_CODE -ne 0 ]; then
-        echo "[ERROR] Semgrep scan failed, output:"
-        cat semgrep-test.json
-        exit $SEMGREP_EXIT_CODE
-      fi
-
-      echo "[INFO] Semgrep scan succeeded, partial report:"
-      head -40 semgrep-test.json || echo "Report file empty or missing"
-    '''
-  }
-}
-
-
-stage('Semgrep Scan & Autofix') {
-    steps {
-        script {
-            sh '''
-                echo "[INFO] Starting Semgrep scan with autofix..."
-
-                # Ensure jq exists for JSON parsing if needed later
-                if ! command -v jq &> /dev/null; then
-                    echo "[WARN] jq is not installed. Skipping JSON pretty print."
-                fi
-
-                # Verify semgrep config file exists
-                if [ ! -f .semgrep/sql-injection-autofix.yml ]; then
-                    echo "[ERROR] Semgrep config file missing: .semgrep/sql-injection-autofix.yml"
-                    exit 1
-                fi
-
-                # Run semgrep with autofix and capture exit code
-                set +e
-                semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json
-                SEMGREP_EXIT_CODE=$?
-                set -e
-
-                # Check if report was actually created
-                if [ ! -s semgrep-report.json ]; then
-                    echo "[ERROR] Semgrep did not generate a report. Possible failure or no findings."
-                    exit 1
-                fi
-
-                # Show result or error
-                if [ "$SEMGREP_EXIT_CODE" -ne 0 ]; then
-                    echo "[ERROR] Semgrep scan failed with exit code $SEMGREP_EXIT_CODE"
-                    cat semgrep-report.json || echo "[INFO] Report file unreadable"
-                    exit $SEMGREP_EXIT_CODE
-                else
-                    echo "[INFO] Semgrep scan and autofix completed successfully."
-                fi
-            '''
-
-            // Archive results so they are available after build
-            archiveArtifacts artifacts: 'semgrep-report.json', allowEmptyArchive: true
+        stage('Semgrep Scan Without Autofix (Debug)') {
+            steps {
+                sh '''
+                    semgrep scan --config .semgrep/sql-injection-autofix.yml --json > semgrep-no-fix.json
+                    echo "Semgrep scan (no autofix) exit code: $?"
+                    head -40 semgrep-no-fix.json || echo "Report file empty or missing"
+                '''
+            }
         }
-    }
-}
+
+        stage('Semgrep Scan & Autofix') {
+            steps {
+                script {
+                    sh '''
+                        echo "[INFO] Starting Semgrep scan with autofix..."
+
+                        if [ ! -f .semgrep/sql-injection-autofix.yml ]; then
+                            echo "[ERROR] Semgrep config file missing"
+                            exit 1
+                        fi
+
+                        set +e
+                        semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json
+                        SEMGREP_EXIT_CODE=$?
+                        set -e
+
+                        if [ ! -s semgrep-report.json ]; then
+                            echo "[ERROR] Semgrep did not generate a report."
+                            exit 1
+                        fi
+
+                        if [ "$SEMGREP_EXIT_CODE" -ne 0 ]; then
+                            echo "[ERROR] Semgrep scan failed with exit code $SEMGREP_EXIT_CODE"
+                            cat semgrep-report.json || echo "[INFO] Report unreadable"
+                            exit $SEMGREP_EXIT_CODE
+                        fi
+
+                        echo "[INFO] Semgrep scan and autofix completed successfully."
+                    '''
+                    archiveArtifacts artifacts: 'semgrep-report.json', allowEmptyArchive: false
+                }
+            }
+        }
 
         stage('Create SAST Fix PR') {
             steps {
@@ -177,7 +111,9 @@ stage('Semgrep Scan & Autofix') {
                 }
             }
         }
-   /*     stage('SonarQube Analysis') {
+
+        /*
+        stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQubeServer') {
                     sh """
@@ -189,8 +125,6 @@ stage('Semgrep Scan & Autofix') {
                 }
             }
         }
-
-       
 
         stage('Build App') {
             steps {
@@ -230,7 +164,7 @@ stage('Semgrep Scan & Autofix') {
         stage('Ensure CloudWatch Log Group Exists') {
             steps {
                 sh '''
-                    aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group already exists or creation skipped"
+                    aws logs create-log-group --log-group-name "$LOG_GROUP" --region $AWS_REGION || echo "Log group exists or skipped"
                 '''
             }
         }
@@ -319,6 +253,7 @@ stage('Semgrep Scan & Autofix') {
                     }
                 }
             }
-        }*/
+        }
+        */
     }
 }
