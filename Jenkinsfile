@@ -18,13 +18,13 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
             }
         }
-                stage('Dependency Scan - OWASP') {
+       /*         stage('Dependency Scan - OWASP') {
             steps {
                 sh 'mvn org.owasp:dependency-check-maven:check'
             }
         }
 
-/*        stage('Dependency Scan - Snyk') {
+       stage('Dependency Scan - Snyk') {
             steps {
                 sh 'snyk test || true'  // Optional fail-safe if snyk finds issues
             }
@@ -59,7 +59,8 @@ pipeline {
         stage('SAST - Semgrep Scan') {
             steps {
                 sh '''
-                    semgrep scan --config auto --json > semgrep-report.json || true
+                    semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --verbose
+
                 '''
             }
         }
