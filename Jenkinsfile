@@ -73,28 +73,33 @@ pipeline {
         }
 
         stage('Create SAST Fix PR') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
-                    sh '''
-                        set -e
-                        git config --global user.name "$GIT_USER"
-                        git config --global user.email "$GIT_USER@users.noreply.github.com"
+    steps {
+        withCredentials([usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+            bat '''
+            @echo off
+            setlocal enabledelayedexpansion
 
-                        BRANCH_NAME="fix/sast-autofix-$(date +%s)"
-                        git checkout -b "$BRANCH_NAME"
-                        git add .
-                        git diff --cached --quiet || git commit -m "chore: auto-remediation for SAST issues"
-                        git push https://$GIT_USER:$GIT_PASS@github.com/sivendar2/employee-department-1.git "$BRANCH_NAME"
+            git config --global user.name "%GIT_USER%"
+            git config --global user.email "%GIT_USER%@users.noreply.github.com"
 
-                        gh pr create \
-                          --base main \
-                          --head "$BRANCH_NAME" \
-                          --title "SAST: Auto-fixed issues using Semgrep" \
-                          --body "This PR includes automated fixes for static code analysis issues. Please review before merging."
-                    '''
-                }
-            }
+            for /f %%i in ('powershell -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+
+            git checkout -b !BRANCH_NAME!
+            git add .
+            git diff --cached --quiet || git commit -m "chore: auto-remediation for SAST issues"
+            git push https://%GIT_USER%:%GIT_PASS%@github.com/sivendar2/employee-department-1.git !BRANCH_NAME!
+
+            gh pr create ^
+              --base main ^
+              --head !BRANCH_NAME! ^
+              --title "SAST: Auto-fixed issues using Semgrep" ^
+              --body "This PR includes automated fixes for static code analysis issues. Please review before merging."
+
+            endlocal
+            '''
         }
+    }
+}
 
 
         stage('SonarQube Analysis') {
