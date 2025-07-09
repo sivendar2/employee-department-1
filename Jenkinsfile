@@ -56,55 +56,57 @@ pipeline {
     }
 }*/
 
-        stage('SAST - Semgrep Scan') {
-            steps {
-                sh '''
-                    semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --verbose
-
-                '''
-            }
-        }
-
-        stage('Semgrep Autofix') {
-            steps {
-                sh '''
-                    semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json || true
-                '''
-            }
-        }
-
-        stage('Create SAST Fix PR') {
-    steps {
-        withCredentials([
-    usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS'),
-    string(credentialsId: 'gh-token', variable: 'GH_TOKEN') // this line uses your new credential
-]) {
-            bat '''
-            @echo off
-            setlocal enabledelayedexpansion
-
-            git config --global user.name "%GIT_USER%"
-            git config --global user.email "%GIT_USER%@users.noreply.github.com"
-
-            for /f %%i in ('powershell -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
-
-            git checkout -b !BRANCH_NAME!
-            git add .
-            git diff --cached --quiet || git commit -m "chore: auto-remediation for SAST issues"
-            git push https://%GIT_USER%:%GIT_PASS%@github.com/sivendar2/employee-department-1.git !BRANCH_NAME!
-
-            gh pr create ^
-              --base main ^
-              --head !BRANCH_NAME! ^
-              --title "SAST: Auto-fixed issues using Semgrep" ^
-              --body "This PR includes automated fixes for static code analysis issues. Please review before merging."
-
-            endlocal
-            '''
-        }
-    }
+       stage('Verify Semgrep Rule') {
+  steps {
+    sh 'ls -l .semgrep/sql-injection-autofix.yml'
+  }
 }
 
+stage('Semgrep Scan & Autofix') {
+  steps {
+    script {
+      def status = sh(
+        script: 'semgrep scan --config .semgrep/sql-injection-autofix.yml --autofix --json > semgrep-report.json',
+        returnStatus: true
+      )
+      if (status != 0) {
+        echo "Semgrep scan/autofix encountered errors. Please check semgrep-report.json for details."
+      }
+    }
+  }
+}
+
+stage('Create SAST Fix PR') {
+  steps {
+    withCredentials([
+      usernamePassword(credentialsId: 'git-cred-id', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS'),
+      string(credentialsId: 'gh-token', variable: 'GH_TOKEN')
+    ]) {
+      bat '''
+        @echo off
+        setlocal enabledelayedexpansion
+
+        git config --global user.name "%GIT_USER%"
+        git config --global user.email "%GIT_USER%@users.noreply.github.com"
+
+        for /f %%i in ('powershell -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+
+        git checkout -b !BRANCH_NAME!
+        git add .
+        git diff --cached --quiet || git commit -m "chore: auto-remediation for SAST issues"
+        git push https://%GIT_USER%:%GIT_PASS%@github.com/sivendar2/employee-department-1.git !BRANCH_NAME!
+
+        gh pr create ^
+          --base main ^
+          --head !BRANCH_NAME! ^
+          --title "SAST: Auto-fixed issues using Semgrep" ^
+          --body "This PR includes automated fixes for static code analysis issues. Please review before merging."
+
+        endlocal
+      '''
+    }
+  }
+}
 
    /*     stage('SonarQube Analysis') {
             steps {
