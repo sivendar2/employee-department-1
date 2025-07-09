@@ -1,15 +1,15 @@
 rules:
-  - id: java-sql-injection-autofix
+  - id: sql-injection-autofix
     languages: [java]
-    pattern: |
-      ResultSet rs = stmt.executeQuery("SELECT * FROM users WHERE id = " + userId);
-    message: SQL injection risk: use PreparedStatement instead.
     severity: ERROR
+    message: "Potential SQL injection: use PreparedStatement instead."
+    pattern: |
+      Statement $STMT = $DB.createStatement();
+      String $SQL = "SELECT" + ... + $VAR + ...;
+      ResultSet $RS = $STMT.executeQuery($SQL);
     fix: |
-      String sql = "SELECT * FROM users WHERE id = ?";
-      PreparedStatement pstmt = connection.prepareStatement(sql);
-      pstmt.setString(1, userId);
-      ResultSet rs = pstmt.executeQuery();
+      PreparedStatement stmt = $DB.prepareStatement("SELECT ... WHERE column = ?");
+      stmt.setString(1, $VAR);
+      ResultSet $RS = stmt.executeQuery();
     metadata:
       category: security
-      technology: java
