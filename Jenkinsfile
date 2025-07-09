@@ -55,6 +55,16 @@ pipeline {
         }
     }
 }*/
+        stage('Install Semgrep') {
+  steps {
+    sh '''
+      pip install --user semgrep
+      export PATH=$PATH:~/.local/bin
+      semgrep --version
+    '''
+  }
+}
+
 
     stage('Verify Semgrep Rule') {
             steps {
