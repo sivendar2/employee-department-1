@@ -1,20 +1,14 @@
 rules:
-  - id: sql-injection-autofix
-    name: Detect and fix SQL injection via string concatenation
+  - id: semgrep.sql-injection-autofix
+    pattern: |
+      String $VAR = "SELECT * FROM users WHERE username = '" + $USER + "'";
+      Statement $STMT = $CONN.createStatement();
+      ResultSet $RS = $STMT.executeQuery($VAR);
+    message: "Possible SQL injection detected. Use PreparedStatement instead of string concatenation."
     languages: [java]
     severity: ERROR
-    message: |
-      SQL injection vulnerability detected. Use parameterized queries instead of string concatenation.
-    pattern: |
-      $STMT = $CONN.createStatement();
-      String $SQL = "SELECT * FROM $TABLE WHERE username = '" + $USER + "'";
-      ResultSet $RS = $STMT.executeQuery($SQL);
     fix: |
-      PreparedStatement stmt = $CONN.prepareStatement("SELECT * FROM $TABLE WHERE username = ?");
-      stmt.setString(1, $USER);
-      ResultSet $RS = stmt.executeQuery();
-    metadata:
-      category: security
-      cwe: "CWE-89"
-      technology: java
-      autofix: true
+      String query = "SELECT * FROM users WHERE username = ?";
+      PreparedStatement pstmt = $CONN.prepareStatement(query);
+      pstmt.setString(1, $USER);
+      ResultSet $RS = pstmt.executeQuery();
