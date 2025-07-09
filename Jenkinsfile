@@ -22,10 +22,11 @@ pipeline {
         stage('Install Semgrep') {
             steps {
                 sh '''
-                    python3 -m pip install --upgrade pip
-                    python3 -m pip install --user semgrep
-                    export PATH=$PATH:~/.local/bin
-                    semgrep --version
+                   python -m pip install --upgrade pip
+                   python -m pip install --user semgrep
+                   export PATH=$PATH:~/.local/bin
+                   semgrep --version
+
                 '''
             }
         }
