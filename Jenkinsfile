@@ -62,6 +62,35 @@ pipeline {
             }
         }
 
+        stage('Debug Semgrep Environment') {
+  steps {
+    sh '''
+      echo "[INFO] Semgrep version:"
+      semgrep --version || echo "Semgrep not found or failed"
+
+      echo "[INFO] .semgrep directory contents:"
+      ls -l .semgrep || echo ".semgrep directory missing"
+
+      echo "[INFO] Showing semgrep config file content:"
+      cat .semgrep/sql-injection-autofix.yml || echo "Config file missing"
+
+      echo "[INFO] Running semgrep scan WITHOUT autofix:"
+      semgrep scan --config .semgrep/sql-injection-autofix.yml --json > semgrep-test.json 2>&1
+      SEMGREP_EXIT_CODE=$?
+      echo "[INFO] semgrep exit code: $SEMGREP_EXIT_CODE"
+      if [ $SEMGREP_EXIT_CODE -ne 0 ]; then
+        echo "[ERROR] Semgrep scan failed, output:"
+        cat semgrep-test.json
+        exit $SEMGREP_EXIT_CODE
+      fi
+
+      echo "[INFO] Semgrep scan succeeded, partial report:"
+      head -40 semgrep-test.json || echo "Report file empty or missing"
+    '''
+  }
+}
+
+
 stage('Semgrep Scan & Autofix') {
     steps {
         script {
