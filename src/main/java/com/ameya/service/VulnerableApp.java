@@ -7,7 +7,7 @@ public class VulnerableApp {
         Connection conn = DriverManager.getConnection("jdbc:mysql://localhost/db", "user", "pass");
         // Vulnerable: SQL Injection here
         String sql = "SELECT * FROM users WHERE username = '" + username + "'";
-        Statement stmt = conn.createStatement();
+        PreparedStatement stmt = conn.createPreparedStatement();
         ResultSet rs = stmt.executeQuery(sql);
         if (rs.next()) {
             System.out.println("User authenticated");
