@@ -43,8 +43,7 @@ public class EmployeeInfoBusinessService {
      */
     public List<Employee> getEmployeesByDepartment(String departmentName) {
         // ⚠️ This code is vulnerable to SQL Injection!
-        String sql = "SELECT * FROM employees WHERE department_id = '" + departmentName + "'";
-        return jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(Employee.class));
+        return jdbcTemplate.query("SELECT * FROM employees WHERE department_id = '" + departmentName + "'", new BeanPropertyRowMapper<>(Employee.class));
     }
 
     public List<Employee> getAllEmployeesSortedByDeptAndEmpNo() {
