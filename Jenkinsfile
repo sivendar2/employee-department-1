@@ -109,7 +109,7 @@ stage('Configure Semgrep PATH on Windows') {
             }
         }
 
-        /*
+        
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQubeServer') {
@@ -251,6 +251,6 @@ stage('Configure Semgrep PATH on Windows') {
                 }
             }
         }
-        */
+        
     }
 }
