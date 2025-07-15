@@ -8,16 +8,18 @@ import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.GetMapping;
-
 import java.util.List;
 
 @Service
 public class EmployeeInfoBusinessService {
 
     private final EmployeeRepository employeeRepo;
+
     private final DepartmentRepository departmentRepo;
+
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
     @Autowired
     private EmployeeRepository employeeRepository;
 
@@ -43,7 +45,7 @@ public class EmployeeInfoBusinessService {
      */
     public List<Employee> getEmployeesByDepartment(String departmentName) {
         // ⚠️ This code is vulnerable to SQL Injection!
-        return jdbcTemplate.query("SELECT * FROM employees WHERE department_id = '" + departmentName + "'", new BeanPropertyRowMapper<>(Employee.class));
+        return jdbcTemplate.query("SELECT * FROM employees WHERE department_id = '?'", new BeanPropertyRowMapper<>(Employee.class), departmentName);
     }
 
     public List<Employee> getAllEmployeesSortedByDeptAndEmpNo() {
@@ -55,9 +57,6 @@ public class EmployeeInfoBusinessService {
     }
 
     public String getDepartmentNameByEmployeeNumber(Long employeeNumber) {
-        return employeeRepo.findByEmployeeNumber(employeeNumber)
-                .map(emp -> emp.getDepartment().getName())
-                .orElseThrow(() -> new RuntimeException("Employee not found"));
+        return employeeRepo.findByEmployeeNumber(employeeNumber).map(emp -> emp.getDepartment().getName()).orElseThrow(() -> new RuntimeException("Employee not found"));
     }
 }
-
