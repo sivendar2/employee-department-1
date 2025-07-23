@@ -12,8 +12,12 @@ spec:
       labels:
         app: employee-department
     spec:
+      securityContext:
+        runAsNonRoot: true #:
       containers:
-        - name: employee-department
+        - securityContext:
+            allowPrivilegeEscalation: false
+          name: employee-department
           image: updateimage.amazonaws.com/employee-department:latest
           ports:
             - containerPort: 8080
