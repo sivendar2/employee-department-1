@@ -1,0 +1,9 @@
+Updated commons-beanutils:commons-beanutils from 1.9.2 to commons-beanutils:commons-beanutils@1.11.0 via Snyk
+Updated commons-beanutils:commons-beanutils from commons-beanutils:commons-beanutils@1.11.0 to commons-beanutils:commons-beanutils@1.9.4 via Snyk
+Updated commons-io:commons-io from 2.4 to commons-io:commons-io@2.7 via Snyk
+Updated commons-io:commons-io from commons-io:commons-io@2.7 to commons-io:commons-io@2.14.0 via Snyk
+Updated junit:junit from 4.12 to junit:junit@4.13.1 via Snyk
+Updated org.apache.logging.log4j:log4j-core from 2.14.1 to org.apache.logging.log4j:log4j-core@2.15.0 via Snyk
+Updated org.apache.logging.log4j:log4j-core from org.apache.logging.log4j:log4j-core@2.15.0 to org.apache.logging.log4j:log4j-core@2.16.0 via Snyk
+Updated org.apache.logging.log4j:log4j-core from org.apache.logging.log4j:log4j-core@2.16.0 to org.apache.logging.log4j:log4j-core@2.17.0 via Snyk
+Updated org.apache.logging.log4j:log4j-core from org.apache.logging.log4j:log4j-core@2.17.0 to org.apache.logging.log4j:log4j-core@2.17.1 via Snyk
