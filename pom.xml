@@ -90,6 +90,12 @@
         <version>2.4</version>
     </dependency>
 
+	<dependency>
+        <groupId>org.apache.httpcomponents</groupId>
+        <artifactId>httpclient</artifactId>
+        <version>4.5.10</version>
+    </dependency>
+
     <!-- CVE-2018-1000632: Commons BeanUtils -->
     <dependency>
         <groupId>commons-beanutils</groupId>
