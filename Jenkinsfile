@@ -93,15 +93,34 @@ pipeline {
     }
 
     stage('Read Remediation Result') {
-      steps {
-        script {
-          def ok = fileExists('scripts/output/remediation_ok.flag')
-          env.REMEDIATION_OK = ok ? 'true' : 'false'
-          echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
-          archiveArtifacts artifacts: 'scripts/output/*.log, scripts/output/*.txt, scripts/output/*.json', allowEmptyArchive: true
+  steps {
+    script {
+      // Quick peek for debugging
+      bat 'dir /a "scripts\\output" || echo (no output dir)'
+
+      def ok = false
+
+      // 1) Prefer the flag
+      if (fileExists('scripts/output/remediation_ok.flag')) {
+        ok = true
+      } else if (fileExists('scripts/output/remediation_status.json')) {
+        // 2) Fallback to JSON (requires Pipeline Utility Steps plugin)
+        try {
+          def s = readJSON file: 'scripts/output/remediation_status.json'
+          ok = (s?.compile_ok == true)
+        } catch (e) {
+          echo "Could not read remediation_status.json: ${e}"
         }
       }
+
+      env.REMEDIATION_OK = ok ? 'true' : 'false'
+      echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
+
+      // Archive everything, including flags, for troubleshooting
+      archiveArtifacts artifacts: 'scripts/output/*', allowEmptyArchive: true
     }
+  }
+}
 
     stage('Show Remediation Compile Errors') {
       when { expression { env.REMEDIATION_OK != 'true' } }
@@ -137,5 +156,6 @@ pipeline {
     }
   }
 }
+
 
 
