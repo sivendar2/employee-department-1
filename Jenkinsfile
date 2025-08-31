@@ -1,7 +1,6 @@
 pipeline {
   agent any
 
-
   environment {
     AWS_REGION = 'us-east-1'
     ECR_REPO   = '779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1'
@@ -44,103 +43,60 @@ pipeline {
     }
 
     stage('Run Remediation (safe temp clone)') {
-  steps {
-    withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
-      withEnv(['MVN_EXE=C:\\maven\\bin\\mvn.cmd']) {
-        bat '''
-          @echo off
-          setlocal enabledelayedexpansion
+      steps {
+        withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
+          withEnv(['MVN_EXE=C:\\maven\\bin\\mvn.cmd']) {
+            bat '''
+              @echo off
+              setlocal enabledelayedexpansion
 
-          for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
-          set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
-          set OUT_DIR=%WORKSPACE%\\scripts\\output
+              for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
+              set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
+              set OUT_DIR=%WORKSPACE%\\scripts\\output
 
-          rem ---- wipe previous outputs to avoid stale flags/logs ----
-          if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" 2>nul
-          mkdir "%OUT_DIR%"
+              rem ---- wipe previous outputs to avoid stale flags/logs ----
+              if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" 2>nul
+              mkdir "%OUT_DIR%"
 
-          rem optional: also start fresh temp clone
-          rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
-          mkdir "%REMEDIATION_DIR%"
-          cd "%REMEDIATION_DIR%"
+              rem optional: also start fresh temp clone
+              rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
+              mkdir "%REMEDIATION_DIR%"
+              cd "%REMEDIATION_DIR%"
 
-          for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
-          echo !BRANCH_NAME! > BRANCH_NAME.txt
+              for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+              echo !BRANCH_NAME! > BRANCH_NAME.txt
 
-          python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
-            --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-            --branch-name "!BRANCH_NAME!" ^
-            --nexus-iq-report "%REPORT_ABS%" ^
-            --py-sca-report "scripts/data/py_sca_report.json" ^
-            --py-requirements "requirements.txt" ^
-            --js-version-strategy keep_prefix ^
-            --output-dir "%OUT_DIR%" ^
-            --slack-webhook ""
+              python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
+                --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+                --branch-name "!BRANCH_NAME!" ^
+                --nexus-iq-report "%REPORT_ABS%" ^
+                --py-sca-report "scripts/data/py_sca_report.json" ^
+                --py-requirements "requirements.txt" ^
+                --js-version-strategy keep_prefix ^
+                --output-dir "%OUT_DIR%" ^
+                --slack-webhook ""
 
-          endlocal
-        '''
-      }
-    }
-  }
-}
-
-  stage('Read Remediation Result') {
-  steps {
-    script {
-      // Show what's actually in the folder
-      bat 'dir /a "scripts\\output" || echo (no output dir)'
-
-      // Build absolute paths (Windows style, no guessing)
-      def ws = pwd().replace('/', '\\')
-      def flagAbs = "${ws}\\scripts\\output\\remediation_ok.flag"
-      def jsonAbs = "${ws}\\scripts\\output\\remediation_status.json"
-
-      // 1) Groovy: fileExists on relative path
-      def g_flag = fileExists('scripts/output/remediation_ok.flag')
-
-      // 2) Groovy: parse JSON compile_ok if present
-      def g_json = false
-      if (fileExists('scripts/output/remediation_status.json')) {
-        def txt = readFile('scripts/output/remediation_status.json')
-        try {
-          def data = new groovy.json.JsonSlurperClassic().parseText(txt)
-          g_json = (data?.compile_ok == true)
-        } catch (e) {
-          echo "WARN: JSON parse error: ${e}"
+              endlocal
+            '''
+          }
         }
       }
-
-      // 3) PowerShell: absolute path flag check
-      def ps_flag = powershell(returnStdout: true, script: """
-        \$p = '${flagAbs}'
-        if (Test-Path -LiteralPath \$p) { 'true' } else { 'false' }
-      """).trim().toLowerCase() == 'true'
-
-      // 4) PowerShell: JSON compile_ok (absolute path)
-      def ps_json = powershell(returnStdout: true, script: """
-        \$p = '${jsonAbs}'
-        if (-not (Test-Path -LiteralPath \$p)) { 'false'; exit }
-        try {
-          \$j = Get-Content -LiteralPath \$p | ConvertFrom-Json
-          if (\$j.compile_ok -eq \$true) { 'true' } else { 'false' }
-        } catch { 'false' }
-      """).trim().toLowerCase() == 'true'
-
-      // Debug: print all signals so we can see which one wins
-      echo "DEBUG ws=${ws}"
-      echo "DEBUG flagAbs=${flagAbs}"
-      echo "DEBUG jsonAbs=${jsonAbs}"
-      echo "DEBUG g_flag=${g_flag}, g_json=${g_json}, ps_flag=${ps_flag}, ps_json=${ps_json}"
-
-      // Final decision
-      env.REMEDIATION_OK = ((g_flag || g_json || ps_flag || ps_json) ? 'true' : 'false')
-      echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
-
-      // keep artifacts
-      archiveArtifacts artifacts: 'scripts/output/*', allowEmptyArchive: true
     }
-  }
-}
+
+    stage('Read Remediation Result') {
+      steps {
+        // show what's there, helpful for debugging
+        bat 'dir /a "scripts\\output" || echo (no output dir)'
+        script {
+          // Source of truth = presence of the flag
+          boolean ok = fileExists('scripts/output/remediation_ok.flag')
+          env.REMEDIATION_OK = ok ? 'true' : 'false'
+          echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
+        }
+        // keep everything the tool wrote
+        archiveArtifacts artifacts: 'scripts/output/**', allowEmptyArchive: true
+      }
+    }
 
     stage('Show Remediation Compile Errors') {
       when { expression { env.REMEDIATION_OK != 'true' } }
@@ -167,8 +123,7 @@ pipeline {
         bat 'mvn clean package -DskipTests'
       }
     }
-
-   }
+  }
 
   post {
     always {
@@ -176,9 +131,3 @@ pipeline {
     }
   }
 }
-
-
-
-
-
-
