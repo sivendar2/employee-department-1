@@ -126,125 +126,7 @@ stage('Build App (remediated)') {
       }
     }
 
-    stage('Build Docker Image (original)') {
-      when { expression { env.REMEDIATION_OK != 'true' } }
-      steps {
-        bat 'docker build -t employee-department1 -f Docker/Dockerfile .'
-      }
-    }
-
-    stage('Docker Login to ECR') {
-      steps {
-        withCredentials([ usernamePassword(credentialsId: 'aws-ecr-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY') ]) {
-          bat '''
-            @echo off
-            set "AWS_DIR=%USERPROFILE%\\.aws"
-            if not exist "%AWS_DIR%" mkdir "%AWS_DIR%"
-            > "%AWS_DIR%\\credentials" echo [default]
-            >>"%AWS_DIR%\\credentials" echo aws_access_key_id=%AWS_ACCESS_KEY_ID%
-            >>"%AWS_DIR%\\credentials" echo aws_secret_access_key=%AWS_SECRET_ACCESS_KEY%
-            aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %ECR_REPO%
-          '''
-        }
-      }
-    }
-
-    stage('Push Docker Image to ECR') {
-      steps {
-        bat """
-          @echo off
-          docker tag employee-department1:latest %ECR_REPO%:%IMAGE_TAG%
-          docker push %ECR_REPO%:%IMAGE_TAG%
-        """
-      }
-    }
-
-    stage('Ensure CloudWatch Log Group Exists') {
-      steps {
-        bat '''
-          @echo off
-          aws logs create-log-group --log-group-name "%LOG_GROUP%" --region %AWS_REGION% || echo Log group exists or skipped
-        '''
-      }
-    }
-
-    stage('Register Task Definition') {
-      steps {
-        script {
-          def taskDefJson = """
-          {
-            "family": "employee-taskdef",
-            "networkMode": "awsvpc",
-            "requiresCompatibilities": ["FARGATE"],
-            "cpu": "512",
-            "memory": "1024",
-            "executionRoleArn": "${EXECUTION_ROLE_ARN}",
-            "containerDefinitions": [
-              {
-                "name": "employee-department1",
-                "image": "${ECR_REPO}:${IMAGE_TAG}",
-                "portMappings": [
-                  { "containerPort": 8080, "protocol": "tcp" }
-                ],
-                "essential": true,
-                "logConfiguration": {
-                  "logDriver": "awslogs",
-                  "options": {
-                    "awslogs-group": "${LOG_GROUP}",
-                    "awslogs-region": "${AWS_REGION}",
-                    "awslogs-stream-prefix": "ecs"
-                  }
-                }
-              }
-            ]
-          }
-          """
-          writeFile file: 'taskdef.json', text: taskDefJson
-        }
-        bat 'aws ecs register-task-definition --cli-input-json file://taskdef.json --region %AWS_REGION%'
-      }
-    }
-
-    stage('Deploy to ECS Fargate') {
-      steps {
-        // PowerShell for clearer branching on Windows
-        powershell '''
-          $ErrorActionPreference = "Stop"
-          $clusterName = "employee-cluster1"
-          $serviceName = "employee-service"
-          $region = "${env.AWS_REGION}"
-          $netCfg = "awsvpcConfiguration={subnets=[subnet-0c06c9ba80675ca5b],securityGroups=[sg-03992897fd20860bd],assignPublicIp=ENABLED}"
-
-          try {
-            $status = (aws ecs describe-services --cluster $clusterName --services $serviceName --query "services[0].status" --output text --region $region).Trim()
-          } catch {
-            $status = ""
-          }
-
-          if ([string]::IsNullOrEmpty($status) -or $status -eq "INACTIVE" -or $status -eq "None" -or $status -eq "null") {
-            Write-Host "ECS Service missing/inactive. Creating..."
-            aws ecs create-service `
-              --cluster $clusterName `
-              --service-name $serviceName `
-              --task-definition employee-taskdef `
-              --desired-count 1 `
-              --launch-type FARGATE `
-              --network-configuration $netCfg `
-              --region $region
-          } elseif ($status -eq "ACTIVE") {
-            Write-Host "Service ACTIVE. Forcing new deployment..."
-            aws ecs update-service `
-              --cluster $clusterName `
-              --service $serviceName `
-              --force-new-deployment `
-              --region $region
-          } else {
-            throw "Unexpected ECS service status: $status"
-          }
-        '''
-      }
-    }
-  }
+  
 
   post {
     always {
@@ -252,6 +134,7 @@ stage('Build App (remediated)') {
     }
   }
 }
+
 
 
 
