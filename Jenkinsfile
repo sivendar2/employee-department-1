@@ -84,24 +84,46 @@ pipeline {
 
     stage('Read Remediation Result') {
       steps {
-        // show what's there (debugging)
+        // Show folder contents for sanity
         bat 'dir /a "scripts\\output" || echo (no output dir)'
 
         script {
-          // Build an absolute Windows path and rely ONLY on PowerShell Test-Path
-          def ws      = pwd().replace('/', '\\')
-          def flagAbs = "${ws}\\scripts\\output\\remediation_ok.flag"
+          boolean ok = false
+          List<String> reason = []
 
-          def ok = powershell(returnStdout: true, script: """
-            \$p = '${flagAbs}';
-            if (Test-Path -LiteralPath \$p) { 'true' } else { 'false' }
-          """).trim().toLowerCase() == 'true'
+          // #1: Most reliable — read the flag file directly
+          try {
+            def content = readFile(file: 'scripts/output/remediation_ok.flag', encoding: 'UTF-8').trim()
+            echo "FLAG CONTENT: '${content}'"
+            if (content) { ok = true; reason << 'readFile content' }
+          } catch (err) {
+            echo "readFile failed (expected if flag missing): ${err}"
+          }
+
+          // #2: Fallback — plain CMD check
+          if (!ok) {
+            int rc = bat(returnStatus: true, script: '@echo off\r\nif exist "scripts\\output\\remediation_ok.flag" (exit /b 0) else (exit /b 1)')
+            echo "CMD if-exist rc=${rc}"
+            if (rc == 0) { ok = true; reason << 'cmd if exist' }
+          }
+
+          // #3: Last resort — PowerShell absolute path check
+          if (!ok) {
+            def ws = pwd().replace('/', '\\')
+            def flagAbs = "${ws}\\scripts\\output\\remediation_ok.flag"
+            def pso = powershell(returnStdout: true, script: """
+              \$p = '${flagAbs}';
+              if (Test-Path -LiteralPath \$p) { 'true' } else { 'false' }
+            """).trim().toLowerCase()
+            echo "PS Test-Path says: ${pso}"
+            if (pso == 'true') { ok = true; reason << 'powershell Test-Path' }
+          }
 
           env.REMEDIATION_OK = ok ? 'true' : 'false'
-          echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
+          echo "REMEDIATION_OK = ${env.REMEDIATION_OK} via ${reason.join(', ')}"
         }
 
-        // keep all tool outputs
+        // keep all outputs from the tool
         archiveArtifacts artifacts: 'scripts/output/**', allowEmptyArchive: true
       }
     }
