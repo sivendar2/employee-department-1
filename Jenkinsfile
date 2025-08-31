@@ -99,27 +99,56 @@ pipeline {
   stage('Read Remediation Result') {
   steps {
     script {
-      // Show what's there (handy on Windows)
+      // Show what's actually in the folder
       bat 'dir /a "scripts\\output" || echo (no output dir)'
 
-      // 1) Test-Path (PowerShell) — reliable on Windows agents
-      def okFromFlag = powershell(returnStdout: true, script: '''
-        if (Test-Path "scripts/output/remediation_ok.flag") { "true" } else { "false" }
-      ''').trim().toLowerCase() == 'true'
+      // Build absolute paths (Windows style, no guessing)
+      def ws = pwd().replace('/', '\\')
+      def flagAbs = "${ws}\\scripts\\output\\remediation_ok.flag"
+      def jsonAbs = "${ws}\\scripts\\output\\remediation_status.json"
 
-      // 2) Fallback to JSON if needed
-      def okFromJson = powershell(returnStdout: true, script: '''
-        if (Test-Path "scripts/output/remediation_status.json") {
-          try {
-            $j = Get-Content "scripts/output/remediation_status.json" | ConvertFrom-Json
-            if ($j.compile_ok -eq $true) { "true" } else { "false" }
-          } catch { "false" }
-        } else { "false" }
-      ''').trim().toLowerCase() == 'true'
+      // 1) Groovy: fileExists on relative path
+      def g_flag = fileExists('scripts/output/remediation_ok.flag')
 
-      env.REMEDIATION_OK = (okFromFlag || okFromJson) ? 'true' : 'false'
+      // 2) Groovy: parse JSON compile_ok if present
+      def g_json = false
+      if (fileExists('scripts/output/remediation_status.json')) {
+        def txt = readFile('scripts/output/remediation_status.json')
+        try {
+          def data = new groovy.json.JsonSlurperClassic().parseText(txt)
+          g_json = (data?.compile_ok == true)
+        } catch (e) {
+          echo "WARN: JSON parse error: ${e}"
+        }
+      }
+
+      // 3) PowerShell: absolute path flag check
+      def ps_flag = powershell(returnStdout: true, script: """
+        \$p = '${flagAbs}'
+        if (Test-Path -LiteralPath \$p) { 'true' } else { 'false' }
+      """).trim().toLowerCase() == 'true'
+
+      // 4) PowerShell: JSON compile_ok (absolute path)
+      def ps_json = powershell(returnStdout: true, script: """
+        \$p = '${jsonAbs}'
+        if (-not (Test-Path -LiteralPath \$p)) { 'false'; exit }
+        try {
+          \$j = Get-Content -LiteralPath \$p | ConvertFrom-Json
+          if (\$j.compile_ok -eq \$true) { 'true' } else { 'false' }
+        } catch { 'false' }
+      """).trim().toLowerCase() == 'true'
+
+      // Debug: print all signals so we can see which one wins
+      echo "DEBUG ws=${ws}"
+      echo "DEBUG flagAbs=${flagAbs}"
+      echo "DEBUG jsonAbs=${jsonAbs}"
+      echo "DEBUG g_flag=${g_flag}, g_json=${g_json}, ps_flag=${ps_flag}, ps_json=${ps_json}"
+
+      // Final decision
+      env.REMEDIATION_OK = ((g_flag || g_json || ps_flag || ps_json) ? 'true' : 'false')
       echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
 
+      // keep artifacts
       archiveArtifacts artifacts: 'scripts/output/*', allowEmptyArchive: true
     }
   }
@@ -159,6 +188,7 @@ pipeline {
     }
   }
 }
+
 
 
 
