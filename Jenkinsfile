@@ -40,49 +40,48 @@ pipeline {
       }
     }
 
-    stage('Run Remediation (safe temp clone)') {
-      steps {
-        // GH_TOKEN is used by your Python tool to create the PR *only if* compile succeeds
-        withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
+  stage('Run Remediation (safe temp clone)') {
+  steps {
+    withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
+      withEnv(['MVN_EXE=C:\\maven\\bin\\mvn.cmd']) { // force Maven, skip mvnw confusion
         bat '''
-  @echo off
-  setlocal enabledelayedexpansion
+          @echo off
+          setlocal enabledelayedexpansion
 
-  rem Point directly at Maven (adjust if yours is elsewhere)
-  set "MVN_EXE=C:\\maven\\bin\\mvn.cmd"
-  if not exist "%MVN_EXE%" (
-    echo [WARN] %MVN_EXE% not found. If compile fails, install Maven or fix MVN_EXE.
-  )
+          rem workspace abs path
+          for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
+          set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
 
-  for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
-  set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
+          rem fresh temp dir (tool will clone inside here)
+          rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
+          mkdir "%REMEDIATION_DIR%"
+          cd "%REMEDIATION_DIR%"
 
-  rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
-  mkdir "%REMEDIATION_DIR%"
-  cd "%REMEDIATION_DIR%"
+          for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+          echo !BRANCH_NAME! > BRANCH_NAME.txt
 
-  for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
-  echo !BRANCH_NAME!> BRANCH_NAME.txt
+          rem call your tool (it will clone to .\\repo)
+          python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
+            --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+            --branch-name "!BRANCH_NAME!" ^
+            --nexus-iq-report "%REPORT_ABS%" ^
+            --py-sca-report "scripts/data/py_sca_report.json" ^
+            --py-requirements "requirements.txt" ^
+            --js-version-strategy keep_prefix ^
+            --slack-webhook ""
 
-  python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
-    --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-    --branch-name "!BRANCH_NAME!" ^
-    --py-sca-report "%REPORT_ABS%" ^
-    --py-requirements "requirements.txt" ^
-    --js-version-strategy keep_prefix ^
-    --slack-webhook ""
+          rem copy tool outputs (flags/logs) back to workspace
+          if not exist "%WORKSPACE%\\scripts\\output" mkdir "%WORKSPACE%\\scripts\\output"
+          if exist "%VRF_TOOL_DIR%\\scripts\\output" (
+            xcopy /Y /I /E "%VRF_TOOL_DIR%\\scripts\\output\\*" "%WORKSPACE%\\scripts\\output\\" >nul 2>&1
+          )
 
-  if not exist "%WORKSPACE%\\scripts\\output" mkdir "%WORKSPACE%\\scripts\\output"
-  if exist "%VRF_TOOL_DIR%\\scripts\\output" (
-    xcopy /Y /I "%VRF_TOOL_DIR%\\scripts\\output\\*.*" "%WORKSPACE%\\scripts\\output\\" >nul 2>&1
-  )
-
-  endlocal
-'''
-
-        }
+          endlocal
+        '''
       }
     }
+  }
+}
 stage('Read Remediation Result') {
   steps {
     bat '''
@@ -100,15 +99,24 @@ stage('Read Remediation Result') {
   }
 }
 
+    stage('Show Remediation Compile Errors') {
+  when { expression { env.REMEDIATION_OK != 'true' } }
+  steps {
+    powershell 'if (Test-Path "scripts/output/remediation_compile.log") { Get-Content "scripts/output/remediation_compile.log" -Tail 200 }'
+    powershell 'if (Test-Path "scripts/output/main_log.txt") { Get-Content "scripts/output/main_log.txt" -Tail 120 }'
+  }
+}
+
+
 stage('Build App (remediated)') {
-      when { expression { env.REMEDIATION_OK == 'true' } }
-      steps {
-        bat '''
-          @echo off
-          cd "%REMEDIATION_DIR%\\repo"
-          call mvn clean package -DskipTests
-        '''
-      }
+  when { expression { env.REMEDIATION_OK == 'true' } }
+  steps {
+    bat '''
+      @echo off
+      cd "%REMEDIATION_DIR%\\repo"
+      call mvn -B -DskipTests clean package
+    '''
+  }
 }
 
     stage('Build App (original)') {
@@ -256,6 +264,7 @@ stage('Build App (remediated)') {
     }
   }
 }
+
 
 
 
