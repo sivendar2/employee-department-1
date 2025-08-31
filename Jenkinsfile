@@ -45,39 +45,33 @@ pipeline {
     withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
       withEnv(['MVN_EXE=C:\\maven\\bin\\mvn.cmd']) { // force Maven, skip mvnw confusion
         bat '''
-          @echo off
-          setlocal enabledelayedexpansion
+  @echo off
+  setlocal enabledelayedexpansion
 
-          rem workspace abs path
-          for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
-          set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
+  for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
+  set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
+  set OUT_DIR=%WORKSPACE%\\scripts\\output
 
-          rem fresh temp dir (tool will clone inside here)
-          rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
-          mkdir "%REMEDIATION_DIR%"
-          cd "%REMEDIATION_DIR%"
+  rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
+  mkdir "%REMEDIATION_DIR%"
+  cd "%REMEDIATION_DIR%"
 
-          for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
-          echo !BRANCH_NAME! > BRANCH_NAME.txt
+  for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+  echo !BRANCH_NAME! > BRANCH_NAME.txt
 
-          rem call your tool (it will clone to .\\repo)
-          python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
-            --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-            --branch-name "!BRANCH_NAME!" ^
-            --nexus-iq-report "%REPORT_ABS%" ^
-            --py-sca-report "scripts/data/py_sca_report.json" ^
-            --py-requirements "requirements.txt" ^
-            --js-version-strategy keep_prefix ^
-            --slack-webhook ""
+  python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
+    --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+    --branch-name "!BRANCH_NAME!" ^
+    --nexus-iq-report "%REPORT_ABS%" ^
+    --py-sca-report "scripts/data/py_sca_report.json" ^
+    --py-requirements "requirements.txt" ^
+    --js-version-strategy keep_prefix ^
+    --output-dir "%OUT_DIR%" ^
+    --slack-webhook ""
 
-          rem copy tool outputs (flags/logs) back to workspace
-          if not exist "%WORKSPACE%\\scripts\\output" mkdir "%WORKSPACE%\\scripts\\output"
-          if exist "%VRF_TOOL_DIR%\\scripts\\output" (
-            xcopy /Y /I /E "%VRF_TOOL_DIR%\\scripts\\output\\*" "%WORKSPACE%\\scripts\\output\\" >nul 2>&1
-          )
+  endlocal
+'''
 
-          endlocal
-        '''
       }
     }
   }
@@ -86,27 +80,23 @@ stage('Read Remediation Result') {
   steps {
     script {
       def ok = fileExists('scripts/output/remediation_ok.flag')
+      if (!ok && fileExists('scripts/output/remediation_status.json')) {
+        def s = readJSON file: 'scripts/output/remediation_status.json'
+        ok = (s?.compile_ok == true)
+      }
       env.REMEDIATION_OK = ok ? 'true' : 'false'
       echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
 
-      // show logs to help debug when remediation fails
       if (!ok) {
         if (fileExists('scripts/output/remediation_compile.log')) {
           echo '--- remediation_compile.log (tail) ---'
-          echo readFile('scripts/output/remediation_compile.log')
-            .split('\n')
-            .takeRight(200)
-            .join('\n')
+          echo readFile('scripts/output/remediation_compile.log').split('\n').takeRight(200).join('\n')
         }
         if (fileExists('scripts/output/main_log.txt')) {
           echo '--- main_log.txt (tail) ---'
-          echo readFile('scripts/output/main_log.txt')
-            .split('\n')
-            .takeRight(120)
-            .join('\n')
+          echo readFile('scripts/output/main_log.txt').split('\n').takeRight(120).join('\n')
         }
       }
-
       archiveArtifacts artifacts: 'scripts/output/*', allowEmptyArchive: true
     }
   }
@@ -277,6 +267,7 @@ stage('Build App (remediated)') {
     }
   }
 }
+
 
 
 
