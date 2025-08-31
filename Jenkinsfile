@@ -10,12 +10,12 @@ pipeline {
 
     SONAR_HOST_URL   = 'http://sonarqube.sivendar.click:9000/'
     SONAR_PROJECT_KEY = 'employee-department-1'
-    SONAR_TOKEN = credentials('sonar-token-jenkins') // Jenkins Credentials ID
+    SONAR_TOKEN = credentials('sonar-token-jenkins')
 
-    // Your remediation tool & inputs
-    VRF_TOOL_DIR        = 'D:\\file\\demo\\vuln-remediation-poc-main' // where main.py lives
+    // remediation tool locations (Windows)
+    VRF_TOOL_DIR        = 'D:\\file\\demo\\vuln-remediation-poc-main'
     NEXUS_IQ_REPORT_SRC = 'D:\\file\\demo\\vuln-remediation-poc-main\\scripts\\data\\nexus_iq_report.json'
-    NEXUS_IQ_REPORT     = 'scripts\\data\\nexus_iq_report.json'       // path inside workspace
+    NEXUS_IQ_REPORT     = 'scripts\\data\\nexus_iq_report.json'
 
     REMEDIATION_DIR = 'remediate-tmp'
     REMEDIATION_OK  = 'false'
@@ -42,7 +42,7 @@ pipeline {
 
     stage('Run Remediation (safe temp clone)') {
       steps {
-        // GH_TOKEN is for your Python tool to create PR IF compile succeeds
+        // GH_TOKEN is used by your Python tool to create the PR *only if* compile succeeds
         withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
           bat '''
             @echo off
@@ -64,9 +64,7 @@ pipeline {
             echo !BRANCH_NAME! > ..\\BRANCH_NAME.txt
             git checkout -b !BRANCH_NAME!
 
-            rem ***** CALL YOUR TOOL BY ABSOLUTE PATH *****
-            rem Your tool should: apply fixes -> compile -> ONLY THEN create PR internally
-            rem (GH_TOKEN is available in env for REST/gh auth)
+            rem run your remediation tool (it should compile and create PR internally on success)
             python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
               --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
               --branch-name "!BRANCH_NAME!" ^
@@ -75,7 +73,7 @@ pipeline {
               --js-version-strategy keep_prefix ^
               --slack-webhook ""
 
-            rem Stage anything your tool changed (safe if already committed)
+            rem safe stage (even if already committed inside the tool)
             git add -A
 
             endlocal
@@ -106,7 +104,6 @@ pipeline {
       }
     }
 
-    // Build with remediated source if compile passed
     stage('Build App (remediated)') {
       when { expression { env.REMEDIATION_OK == 'true' } }
       steps {
@@ -118,7 +115,6 @@ pipeline {
       }
     }
 
-    // Otherwise proceed with original workspace
     stage('Build App (original)') {
       when { expression { env.REMEDIATION_OK != 'true' } }
       steps {
@@ -126,8 +122,7 @@ pipeline {
       }
     }
 
-    // --- Optional: Semgrep debug stages on Windows ---
-
+    // ---- Optional Semgrep debug on Windows ----
     stage('Configure Semgrep PATH on Windows') {
       steps {
         bat '''
@@ -184,6 +179,7 @@ pipeline {
         archiveArtifacts artifacts: 'semgrep-report.json', allowEmptyArchive: false
       }
     }
+    // ---- end Semgrep debug ----
 
     stage('SonarQube Analysis') {
       steps {
@@ -198,7 +194,7 @@ pipeline {
       }
     }
 
-    // Build Docker image from the correct source tree
+    // Build Docker image from the correct tree
     stage('Build Docker Image (remediated)') {
       when { expression { env.REMEDIATION_OK == 'true' } }
       steps {
@@ -290,7 +286,7 @@ pipeline {
 
     stage('Deploy to ECS Fargate') {
       steps {
-        // Use PowerShell to branch on service status cleanly on Windows
+        // PowerShell for clearer branching on Windows
         powershell '''
           $ErrorActionPreference = "Stop"
           $clusterName = "employee-cluster1"
