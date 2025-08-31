@@ -11,14 +11,11 @@ pipeline {
         SONAR_PROJECT_KEY = 'employee-department-1'
         SONAR_TOKEN = credentials('sonar-token-jenkins') // Jenkins Credentials ID
 
-        // Flags we’ll flip at runtime
-        REMEDIATION_OK = 'false'
-        REMEDIATION_DIR = 'remediate-tmp'
-      //  NEXUS_IQ_REPORT = 'scripts/data/nexus_iq_report.json'
-          // where your existing JSON lives on the agent
-  NEXUS_IQ_REPORT_SRC = 'D:\\file\\demo\\vuln-remediation-poc-main\\scripts\\data\\nexus_iq_report.json'
-  // where we want it inside the Jenkins workspace
-  NEXUS_IQ_REPORT = 'scripts\\data\\nexus_iq_report.json'
+        VRF_TOOL_DIR        = 'D:\\file\\demo\\vuln-remediation-poc-main'          // where main.py lives
+        NEXUS_IQ_REPORT_SRC = 'D:\\file\\demo\\vuln-remediation-poc-main\\scripts\\data\\nexus_iq_report.json'
+        NEXUS_IQ_REPORT     = 'scripts\\data\\nexus_iq_report.json'                // path inside workspace
+      REMEDIATION_DIR     = 'remediate-tmp'
+  REMEDIATION_OK      = 'false'
     }
 
     stages {
@@ -27,35 +24,17 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
             }
         }
-
-    stage('Nexus IQ Scan → JSON') {
-      steps {
-        bat '''
-          set -euxo pipefail
-
-          # If you have the IQ CLI, uncomment and configure this block:
-          # iq-cli -s "$NEXUS_IQ_URL" \
-          #        -a "$NEXUS_IQ_USER:$NEXUS_IQ_PASS" \
-          #        -i "employee-department-1" \
-          #        -e "build" \
-          #        -r "$NEXUS_IQ_REPORT" \
-          #        .
-
-          # Fallback (no license yet): if JSON already exists in repo/scripts/data, keep it;
-          # otherwise create a minimal placeholder so the next stage can run.
-          #if [ ! -f "$NEXUS_IQ_REPORT" ]; then
-           # echo '{ "components": [], "metadata": {"note":"placeholder until Nexus IQ CLI is available"} }' > "$NEXUS_IQ_REPORT"
-          #fi
-          #echo "Using Nexus IQ report at: $NEXUS_IQ_REPORT"
-          
+stage('Bring Nexus IQ JSON into workspace') {
+  steps {
+    bat '''
       @echo off
       if not exist "scripts\\data" mkdir "scripts\\data"
       copy /Y "%NEXUS_IQ_REPORT_SRC%" "%NEXUS_IQ_REPORT%"
       dir "scripts\\data"
-    
-        '''
-      }
-    }
+    '''
+  }
+}
+
 stage('Run Remediation (safe temp clone)') {
   steps {
     withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
@@ -63,24 +42,24 @@ stage('Run Remediation (safe temp clone)') {
         @echo off
         setlocal enabledelayedexpansion
 
-        rem workspace absolute paths
+        rem workspace absolute path
         for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
         set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
-        set REMDIR=remediate-tmp
 
-        rmdir /S /Q "%REMDIR%" 2>nul || true
-        mkdir "%REMDIR%"
-        cd "%REMDIR%"
+        rem fresh temp dir
+        rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
+        mkdir "%REMEDIATION_DIR%"
+        cd "%REMEDIATION_DIR%"
 
         git clone --branch main https://github.com/sivendar2/employee-department-1.git repo
         cd repo
 
-        for /f %%i in ('powershell -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+        for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
         echo !BRANCH_NAME! > ..\\BRANCH_NAME.txt
         git checkout -b !BRANCH_NAME!
 
-        rem call your Python script; NOTE the absolute report path
-        python "%WORKSPACE%\\scripts\\main.py" ^
+        rem ***** CALL YOUR TOOL BY ABSOLUTE PATH *****
+        python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
           --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
           --branch-name "!BRANCH_NAME!" ^
           --py-sca-report "%REPORT_ABS%" ^
@@ -88,7 +67,9 @@ stage('Run Remediation (safe temp clone)') {
           --js-version-strategy keep_prefix ^
           --slack-webhook ""
 
-        git add -A || ver > nul
+        rem avoid '|| true' (bash); this is safe in CMD:
+        git add -A & rem continue
+
         endlocal
       '''
     }
@@ -96,74 +77,69 @@ stage('Run Remediation (safe temp clone)') {
 }
 
 stage('Validate Build (remediated)') {
-      steps {
-        script {
-          try {
-            sh '''
-              set -euxo pipefail
-              cd "$REMEDIATION_DIR/repo"
-
-              # Compile only (no tests) to quickly validate API breaks
-              mvn -e -B -DskipTests compile | tee ../../remediation_compile.log
-            '''
-            env.REMEDIATION_OK = 'true'
-          } catch (err) {
-            // Save the log and mark failure, but DO NOT fail the pipeline
-            sh '''
-              set -euxo pipefail
-              echo "Compilation failed after remediation. See remediation_compile.log" > remediation_compile_fail.txt
-            '''
-            env.REMEDIATION_OK = 'false'
-          } finally {
-            archiveArtifacts artifacts: 'remediation_compile.log, **/remediation_compile_fail.txt', onlyIfSuccessful: false
-          }
-        }
-      }
-    }
-
- stage('Create PR (only if remediation OK)') {
-      when { expression { env.REMEDIATION_OK == 'true' } }
-      steps {
-        withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
-          sh '''
-            set -euxo pipefail
-            cd "$REMEDIATION_DIR/repo"
-
-            # Ensure we have a branch name
-            BRANCH_NAME="$(cat ../BRANCH_NAME.txt)"
-
-            # Commit if needed
-            git config user.name "jenkins-bot"
-            git config user.email "jenkins-bot@users.noreply.github.com"
-            git diff --cached --quiet || git commit -m "chore: auto-remediation with Nexus IQ + OpenRewrite/Semgrep"
-
-            # Push using PAT (no trailing slash)
-            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/sivendar2/employee-department-1.git"
-            git push -u origin "$BRANCH_NAME"
-
-            # Create PR with gh (GH_TOKEN is picked automatically)
-            gh pr create \
-              --repo sivendar2/employee-department-1 \
-              --base main \
-              --head "$BRANCH_NAME" \
-              --title "SAST: Auto-fixed issues (Nexus IQ + OpenRewrite/Semgrep)" \
-              --body "Automated remediation. See attached compilation log for validation."
-          '''
-        }
-      }
-    }
-
- // Build using the remediated code when it compiled OK
-    stage('Build App (remediated)') {
-      when { expression { env.REMEDIATION_OK == 'true' } }
-      steps {
-        sh '''
-          set -euxo pipefail
-          cd "$REMEDIATION_DIR/repo"
-          mvn clean package -DskipTests
+  steps {
+    script {
+      try {
+        bat '''
+          @echo off
+          setlocal
+          cd "%REMEDIATION_DIR%\\repo"
+          call mvn -e -B -DskipTests compile > "..\\..\\remediation_compile.log" 2>&1
+          endlocal
         '''
+        env.REMEDIATION_OK = 'true'
+      } catch (e) {
+        bat 'echo Compilation failed after remediation. See remediation_compile.log > remediation_compile_fail.txt'
+        env.REMEDIATION_OK = 'false'
+      } finally {
+        archiveArtifacts artifacts: 'remediation_compile.log, **/remediation_compile_fail.txt', onlyIfSuccessful: false
       }
     }
+  }
+}
+
+stage('Create PR (only if remediation OK)') {
+  when { expression { env.REMEDIATION_OK == 'true' } }
+  steps {
+    withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
+      bat '''
+        @echo off
+        setlocal
+        cd "%REMEDIATION_DIR%\\repo"
+        set /p BRANCH_NAME=<..\\BRANCH_NAME.txt
+
+        git config user.name "jenkins-bot"
+        git config user.email "jenkins-bot@users.noreply.github.com"
+        git diff --cached --quiet || git commit -m "chore: auto-remediation with Nexus IQ + OpenRewrite/Semgrep"
+
+        git remote set-url origin https://x-access-token:%GH_TOKEN%@github.com/sivendar2/employee-department-1.git
+        git push -u origin %BRANCH_NAME%
+
+        set GH_TOKEN=%GH_TOKEN%
+        gh pr create --repo sivendar2/employee-department-1 --base main --head %BRANCH_NAME% --title "SAST: Auto-fixed issues" --body "Automated remediation. See remediation_compile.log."
+        endlocal
+      '''
+    }
+  }
+}
+
+stage('Build App (remediated)') {
+  when { expression { env.REMEDIATION_OK == 'true' } }
+  steps {
+    bat '''
+      @echo off
+      cd "%REMEDIATION_DIR%\\repo"
+      call mvn clean package -DskipTests
+    '''
+  }
+}
+
+stage('Build App (original)') {
+  when { expression { env.REMEDIATION_OK != 'true' } }
+  steps {
+    bat 'mvn clean package -DskipTests'
+  }
+}
         
 stage('Configure Semgrep PATH on Windows') {
     steps {
@@ -401,5 +377,6 @@ stage('Configure Semgrep PATH on Windows') {
         
     }
 }
+
 
 
