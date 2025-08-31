@@ -14,7 +14,11 @@ pipeline {
         // Flags we’ll flip at runtime
         REMEDIATION_OK = 'false'
         REMEDIATION_DIR = 'remediate-tmp'
-        NEXUS_IQ_REPORT = 'scripts/data/nexus_iq_report.json'
+      //  NEXUS_IQ_REPORT = 'scripts/data/nexus_iq_report.json'
+          // where your existing JSON lives on the agent
+  NEXUS_IQ_REPORT_SRC = 'D:\\file\\demo\\vuln-remediation-poc-main\\scripts\\data\\nexus_iq_report.json'
+  // where we want it inside the Jenkins workspace
+  NEXUS_IQ_REPORT = 'scripts\\data\\nexus_iq_report.json'
     }
 
     stages {
@@ -26,7 +30,7 @@ pipeline {
 
     stage('Nexus IQ Scan → JSON') {
       steps {
-        sh '''
+        bat '''
           set -euxo pipefail
 
           # If you have the IQ CLI, uncomment and configure this block:
@@ -39,50 +43,58 @@ pipeline {
 
           # Fallback (no license yet): if JSON already exists in repo/scripts/data, keep it;
           # otherwise create a minimal placeholder so the next stage can run.
-          if [ ! -f "$NEXUS_IQ_REPORT" ]; then
-            echo '{ "components": [], "metadata": {"note":"placeholder until Nexus IQ CLI is available"} }' > "$NEXUS_IQ_REPORT"
-          fi
-          echo "Using Nexus IQ report at: $NEXUS_IQ_REPORT"
+          #if [ ! -f "$NEXUS_IQ_REPORT" ]; then
+           # echo '{ "components": [], "metadata": {"note":"placeholder until Nexus IQ CLI is available"} }' > "$NEXUS_IQ_REPORT"
+          #fi
+          #echo "Using Nexus IQ report at: $NEXUS_IQ_REPORT"
+          
+      @echo off
+      if not exist "scripts\\data" mkdir "scripts\\data"
+      copy /Y "%NEXUS_IQ_REPORT_SRC%" "%NEXUS_IQ_REPORT%"
+      dir "scripts\\data"
+    
         '''
       }
     }
+stage('Run Remediation (safe temp clone)') {
+  steps {
+    withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
+      bat '''
+        @echo off
+        setlocal enabledelayedexpansion
 
-  stage('Run Remediation (safe temp clone)') {
-      steps {
-        withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
-          sh '''
-            set -euxo pipefail
+        rem workspace absolute paths
+        for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
+        set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
+        set REMDIR=remediate-tmp
 
-            rm -rf "$REMEDIATION_DIR"
-            mkdir -p "$REMEDIATION_DIR"
-            cd "$REMEDIATION_DIR"
+        rmdir /S /Q "%REMDIR%" 2>nul || true
+        mkdir "%REMDIR%"
+        cd "%REMDIR%"
 
-            # Clone fresh so we don't dirty the main workspace
-            git clone --branch main https://github.com/sivendar2/employee-department-1.git repo
-            cd repo
+        git clone --branch main https://github.com/sivendar2/employee-department-1.git repo
+        cd repo
 
-            # Create a unique branch for the fixes
-            BRANCH_NAME="fix/sast-autofix-$(date +%s)"
-            echo "$BRANCH_NAME" > ../BRANCH_NAME.txt
-            git checkout -b "$BRANCH_NAME"
+        for /f %%i in ('powershell -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+        echo !BRANCH_NAME! > ..\\BRANCH_NAME.txt
+        git checkout -b !BRANCH_NAME!
 
-            # Run your remediation script using the Nexus IQ JSON (input lives in the main workspace)
-            # Adjust path to your script if needed
-          python3 D:/file/demo/vuln-remediation-poc-main/scripts/main.py `
-        --repo-url "https://github.com/sivendar2/employee-department-1.git" `
-        --branch-name $env:BRANCH_NAME `
-        --py-sca-report "../../$env:NEXUS_IQ_REPORT" `
-        --py-requirements "requirements.txt" `
-        --js-version-strategy keep_prefix `
-        --slack-webhook ""
+        rem call your Python script; NOTE the absolute report path
+        python "%WORKSPACE%\\scripts\\main.py" ^
+          --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+          --branch-name "!BRANCH_NAME!" ^
+          --py-sca-report "%REPORT_ABS%" ^
+          --py-requirements "requirements.txt" ^
+          --js-version-strategy keep_prefix ^
+          --slack-webhook ""
 
-
-            # Stage whatever the script changed (it may already do commits; this is safe)
-            git add -A || true
-          '''
-        }
-      }
+        git add -A || ver > nul
+        endlocal
+      '''
     }
+  }
+}
+
 stage('Validate Build (remediated)') {
       steps {
         script {
@@ -389,4 +401,5 @@ stage('Configure Semgrep PATH on Windows') {
         
     }
 }
+
 
