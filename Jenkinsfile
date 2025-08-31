@@ -20,7 +20,6 @@ pipeline {
     REMEDIATION_DIR = 'remediate-tmp'
     REMEDIATION_OK  = 'false'
 
-    // better Python logs
     PYTHONUNBUFFERED = '1'
   }
 
@@ -54,11 +53,11 @@ pipeline {
               set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
               set OUT_DIR=%WORKSPACE%\\scripts\\output
 
-              rem ---- wipe previous outputs to avoid stale flags/logs ----
+              rem ---- wipe outputs so we never read stale flags/logs ----
               if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" 2>nul
               mkdir "%OUT_DIR%"
 
-              rem optional: also start fresh temp clone
+              rem fresh temp clone dir
               rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
               mkdir "%REMEDIATION_DIR%"
               cd "%REMEDIATION_DIR%"
@@ -85,15 +84,24 @@ pipeline {
 
     stage('Read Remediation Result') {
       steps {
-        // show what's there, helpful for debugging
+        // show what's there (debugging)
         bat 'dir /a "scripts\\output" || echo (no output dir)'
+
         script {
-          // Source of truth = presence of the flag
-          boolean ok = fileExists('scripts/output/remediation_ok.flag')
+          // Build an absolute Windows path and rely ONLY on PowerShell Test-Path
+          def ws      = pwd().replace('/', '\\')
+          def flagAbs = "${ws}\\scripts\\output\\remediation_ok.flag"
+
+          def ok = powershell(returnStdout: true, script: """
+            \$p = '${flagAbs}';
+            if (Test-Path -LiteralPath \$p) { 'true' } else { 'false' }
+          """).trim().toLowerCase() == 'true'
+
           env.REMEDIATION_OK = ok ? 'true' : 'false'
           echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
         }
-        // keep everything the tool wrote
+
+        // keep all tool outputs
         archiveArtifacts artifacts: 'scripts/output/**', allowEmptyArchive: true
       }
     }
