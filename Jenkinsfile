@@ -18,12 +18,13 @@ pipeline {
     NEXUS_IQ_REPORT     = 'scripts\\data\\nexus_iq_report.json'
 
     REMEDIATION_DIR = 'remediate-tmp'
-    REMEDIATION_OK  = 'false'
 
+    // better Python logs
     PYTHONUNBUFFERED = '1'
   }
 
   stages {
+
     stage('Checkout') {
       steps {
         git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
@@ -53,11 +54,11 @@ pipeline {
               set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
               set OUT_DIR=%WORKSPACE%\\scripts\\output
 
-              rem ---- wipe outputs so we never read stale flags/logs ----
+              rem ---- wipe previous outputs to avoid stale flags/logs ----
               if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" 2>nul
               mkdir "%OUT_DIR%"
 
-              rem fresh temp clone dir
+              rem ---- start fresh temp clone dir ----
               rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
               mkdir "%REMEDIATION_DIR%"
               cd "%REMEDIATION_DIR%"
@@ -84,80 +85,75 @@ pipeline {
 
     stage('Read Remediation Result') {
       steps {
-        // Show folder contents for sanity
-        bat 'dir /a "scripts\\output" || echo (no output dir)'
-
         script {
-          boolean ok = false
-          List<String> reason = []
+          // Show what the tool produced
+          bat 'dir /a "scripts\\output" || echo (no output dir)'
 
-          // #1: Most reliable — read the flag file directly
-          try {
+          def hasFix = false
+          def reason = 'no flag/status found'
+
+          // Preferred: simple flag file (created by the tool)
+          if (fileExists('scripts/output/remediation_ok.flag')) {
             def content = readFile(file: 'scripts/output/remediation_ok.flag', encoding: 'UTF-8').trim()
             echo "FLAG CONTENT: '${content}'"
-            if (content) { ok = true; reason << 'readFile content' }
-          } catch (err) {
-            echo "readFile failed (expected if flag missing): ${err}"
+            hasFix = content.length() > 0
+            reason = 'flag file present'
+          } else if (fileExists('scripts/output/remediation_status.json')) {
+            // Fallback: parse compile_ok via PowerShell to avoid JsonSlurper script-security
+            def okStr = powershell(returnStdout: true, script: '''
+              $p = "scripts\\output\\remediation_status.json"
+              if (Test-Path -LiteralPath $p) {
+                try {
+                  $j = Get-Content -LiteralPath $p | ConvertFrom-Json
+                  if ($j.compile_ok -eq $true) { "true" } else { "false" }
+                } catch { "false" }
+              } else { "false" }
+            ''').trim().toLowerCase()
+            hasFix = (okStr == 'true')
+            reason = "status.json compile_ok=${okStr}"
           }
 
-          // #2: Fallback — plain CMD check
-          if (!ok) {
-            int rc = bat(returnStatus: true, script: '@echo off\r\nif exist "scripts\\output\\remediation_ok.flag" (exit /b 0) else (exit /b 1)')
-            echo "CMD if-exist rc=${rc}"
-            if (rc == 0) { ok = true; reason << 'cmd if exist' }
-          }
+          // Make the decision visible on the build
+          currentBuild.displayName = "#${env.BUILD_NUMBER} • remediated=${hasFix}"
+          echo "Decision: remediated=${hasFix} (${reason})"
 
-          // #3: Last resort — PowerShell absolute path check
-          if (!ok) {
-            def ws = pwd().replace('/', '\\')
-            def flagAbs = "${ws}\\scripts\\output\\remediation_ok.flag"
-            def pso = powershell(returnStdout: true, script: """
-              \$p = '${flagAbs}';
-              if (Test-Path -LiteralPath \$p) { 'true' } else { 'false' }
-            """).trim().toLowerCase()
-            echo "PS Test-Path says: ${pso}"
-            if (pso == 'true') { ok = true; reason << 'powershell Test-Path' }
-          }
+          // Persist decision to a file (don’t rely on env vars across stages)
+          writeFile file: 'scripts/output/decision.txt', text: (hasFix ? 'remediated' : 'original'), encoding: 'UTF-8'
 
-          env.REMEDIATION_OK = ok ? 'true' : 'false'
-          echo "REMEDIATION_OK = ${env.REMEDIATION_OK} via ${reason.join(', ')}"
+          // Keep logs/flags
+          archiveArtifacts artifacts: 'scripts/output/*', allowEmptyArchive: true
         }
-
-        // keep all outputs from the tool
-        archiveArtifacts artifacts: 'scripts/output/**', allowEmptyArchive: true
       }
     }
 
-    stage('Show Remediation Compile Errors') {
-      when { expression { env.REMEDIATION_OK != 'true' } }
+    stage('Build App (choose by flag)') {
       steps {
-        powershell 'if (Test-Path "scripts/output/remediation_compile.log") { Get-Content "scripts/output/remediation_compile.log" -Tail 200 }'
-        powershell 'if (Test-Path "scripts/output/main_log.txt") { Get-Content "scripts/output/main_log.txt" -Tail 120 }'
-      }
-    }
+        script {
+          def decision = 'original'
+          if (fileExists('scripts/output/decision.txt')) {
+            decision = readFile(file: 'scripts/output/decision.txt', encoding: 'UTF-8').trim()
+          }
+          echo "Build decision from file: ${decision}"
 
-    stage('Build App (remediated)') {
-      when { expression { env.REMEDIATION_OK == 'true' } }
-      steps {
-        bat '''
-          @echo off
-          cd "%REMEDIATION_DIR%\\repo"
-          call mvn -B -DskipTests clean package
-        '''
-      }
-    }
-
-    stage('Build App (original)') {
-      when { expression { env.REMEDIATION_OK != 'true' } }
-      steps {
-        bat 'mvn clean package -DskipTests'
+          if (decision == 'remediated') {
+            echo '➡ Building REMEDIATED tree'
+            bat '''
+              @echo off
+              cd "%REMEDIATION_DIR%\\repo"
+              call mvn -B -DskipTests clean package
+            '''
+          } else {
+            echo '➡ Building ORIGINAL tree'
+            bat 'mvn clean package -DskipTests'
+          }
+        }
       }
     }
   }
 
   post {
     always {
-      echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
+      echo 'Pipeline finished.'
     }
   }
 }
