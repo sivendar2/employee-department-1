@@ -81,7 +81,7 @@ pipeline {
         }
       }
     }
-    stage('Read Remediation Result') {
+stage('Read Remediation Result') {
   steps {
     bat '''
       @echo off
@@ -98,7 +98,7 @@ pipeline {
   }
 }
 
-    stage('Build App (remediated)') {
+stage('Build App (remediated)') {
       when { expression { env.REMEDIATION_OK == 'true' } }
       steps {
         bat '''
@@ -107,7 +107,7 @@ pipeline {
           call mvn clean package -DskipTests
         '''
       }
-    }
+}
 
     stage('Build App (original)') {
       when { expression { env.REMEDIATION_OK != 'true' } }
@@ -116,77 +116,6 @@ pipeline {
       }
     }
 
-    // ---- Optional Semgrep debug on Windows ----
-    stage('Configure Semgrep PATH on Windows') {
-      steps {
-        bat '''
-          @echo off
-          set "PATH=%PATH%;C:\\Users\\test\\AppData\\Local\\Programs\\Python\\Python313\\Scripts"
-          semgrep --version
-        '''
-      }
-    }
-
-    stage('Verify Semgrep Rule') {
-      steps {
-        bat 'dir .semgrep\\sql-injection-autofix.yml'
-      }
-    }
-
-    stage('Semgrep Scan Without Autofix (Debug)') {
-      steps {
-        bat '''
-          @echo off
-          "C:\\Users\\test\\AppData\\Local\\Programs\\Python\\Python313\\Scripts\\semgrep.exe" scan --config .semgrep\\sql-injection-autofix.yml --json > semgrep-no-fix.json
-          echo Semgrep (no autofix) exit code: %ERRORLEVEL%
-          powershell -NoProfile -Command "Get-Content -TotalCount 40 'semgrep-no-fix.json'" || echo Report file missing
-        '''
-        archiveArtifacts artifacts: 'semgrep-no-fix.json', allowEmptyArchive: true
-      }
-    }
-
-    stage('Semgrep Scan & Autofix') {
-      steps {
-        bat '''
-          @echo off
-          echo [INFO] Starting Semgrep scan with autofix...
-          if not exist ".semgrep\\sql-injection-autofix.yml" (
-            echo [ERROR] Semgrep config file missing
-            exit /b 1
-          )
-          "C:\\Users\\test\\AppData\\Local\\Programs\\Python\\Python313\\Scripts\\semgrep.exe" scan --config .semgrep\\sql-injection-autofix.yml --autofix --json > semgrep-report.json
-          set "SEMGREP_EXIT_CODE=%ERRORLEVEL%"
-
-          if not exist "semgrep-report.json" (
-            echo [ERROR] Semgrep did not generate a report.
-            exit /b 1
-          )
-
-          if not %SEMGREP_EXIT_CODE%==0 (
-            echo [ERROR] Semgrep scan failed with exit code %SEMGREP_EXIT_CODE%
-            type semgrep-report.json
-            exit /b %SEMGREP_EXIT_CODE%
-          )
-
-          echo [INFO] Semgrep scan and autofix completed successfully.
-        '''
-        archiveArtifacts artifacts: 'semgrep-report.json', allowEmptyArchive: false
-      }
-    }
-    // ---- end Semgrep debug ----
-
-    stage('SonarQube Analysis') {
-      steps {
-        withSonarQubeEnv('SonarQubeServer') {
-          bat """
-            mvn sonar:sonar ^
-              -Dsonar.projectKey=%SONAR_PROJECT_KEY% ^
-              -Dsonar.host.url=%SONAR_HOST_URL% ^
-              -Dsonar.login=%SONAR_TOKEN%
-          """
-        }
-      }
-    }
 
     // Build Docker image from the correct tree
     stage('Build Docker Image (remediated)') {
@@ -325,4 +254,5 @@ pipeline {
     }
   }
 }
+
 
