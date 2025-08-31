@@ -10,6 +10,11 @@ pipeline {
         SONAR_HOST_URL = 'http://sonarqube.sivendar.click:9000/'
         SONAR_PROJECT_KEY = 'employee-department-1'
         SONAR_TOKEN = credentials('sonar-token-jenkins') // Jenkins Credentials ID
+
+        // Flags we’ll flip at runtime
+        REMEDIATION_OK = 'false'
+        REMEDIATION_DIR = 'remediate-tmp'
+        NEXUS_IQ_REPORT = 'scripts/data/nexus_iq_report.json'
     }
 
     stages {
@@ -18,6 +23,136 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
             }
         }
+
+    stage('Nexus IQ Scan → JSON') {
+      steps {
+        sh '''
+          set -euxo pipefail
+
+          # If you have the IQ CLI, uncomment and configure this block:
+          # iq-cli -s "$NEXUS_IQ_URL" \
+          #        -a "$NEXUS_IQ_USER:$NEXUS_IQ_PASS" \
+          #        -i "employee-department-1" \
+          #        -e "build" \
+          #        -r "$NEXUS_IQ_REPORT" \
+          #        .
+
+          # Fallback (no license yet): if JSON already exists in repo/scripts/data, keep it;
+          # otherwise create a minimal placeholder so the next stage can run.
+          if [ ! -f "$NEXUS_IQ_REPORT" ]; then
+            echo '{ "components": [], "metadata": {"note":"placeholder until Nexus IQ CLI is available"} }' > "$NEXUS_IQ_REPORT"
+          fi
+          echo "Using Nexus IQ report at: $NEXUS_IQ_REPORT"
+        '''
+      }
+    }
+
+  stage('Run Remediation (safe temp clone)') {
+      steps {
+        withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
+          sh '''
+            set -euxo pipefail
+
+            rm -rf "$REMEDIATION_DIR"
+            mkdir -p "$REMEDIATION_DIR"
+            cd "$REMEDIATION_DIR"
+
+            # Clone fresh so we don't dirty the main workspace
+            git clone --branch main https://github.com/sivendar2/employee-department-1.git repo
+            cd repo
+
+            # Create a unique branch for the fixes
+            BRANCH_NAME="fix/sast-autofix-$(date +%s)"
+            echo "$BRANCH_NAME" > ../BRANCH_NAME.txt
+            git checkout -b "$BRANCH_NAME"
+
+            # Run your remediation script using the Nexus IQ JSON (input lives in the main workspace)
+            # Adjust path to your script if needed
+          python3 D:/file/demo/vuln-remediation-poc-main/scripts/main.py `
+        --repo-url "https://github.com/sivendar2/employee-department-1.git" `
+        --branch-name $env:BRANCH_NAME `
+        --py-sca-report "../../$env:NEXUS_IQ_REPORT" `
+        --py-requirements "requirements.txt" `
+        --js-version-strategy keep_prefix `
+        --slack-webhook ""
+
+
+            # Stage whatever the script changed (it may already do commits; this is safe)
+            git add -A || true
+          '''
+        }
+      }
+    }
+stage('Validate Build (remediated)') {
+      steps {
+        script {
+          try {
+            sh '''
+              set -euxo pipefail
+              cd "$REMEDIATION_DIR/repo"
+
+              # Compile only (no tests) to quickly validate API breaks
+              mvn -e -B -DskipTests compile | tee ../../remediation_compile.log
+            '''
+            env.REMEDIATION_OK = 'true'
+          } catch (err) {
+            // Save the log and mark failure, but DO NOT fail the pipeline
+            sh '''
+              set -euxo pipefail
+              echo "Compilation failed after remediation. See remediation_compile.log" > remediation_compile_fail.txt
+            '''
+            env.REMEDIATION_OK = 'false'
+          } finally {
+            archiveArtifacts artifacts: 'remediation_compile.log, **/remediation_compile_fail.txt', onlyIfSuccessful: false
+          }
+        }
+      }
+    }
+
+ stage('Create PR (only if remediation OK)') {
+      when { expression { env.REMEDIATION_OK == 'true' } }
+      steps {
+        withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
+          sh '''
+            set -euxo pipefail
+            cd "$REMEDIATION_DIR/repo"
+
+            # Ensure we have a branch name
+            BRANCH_NAME="$(cat ../BRANCH_NAME.txt)"
+
+            # Commit if needed
+            git config user.name "jenkins-bot"
+            git config user.email "jenkins-bot@users.noreply.github.com"
+            git diff --cached --quiet || git commit -m "chore: auto-remediation with Nexus IQ + OpenRewrite/Semgrep"
+
+            # Push using PAT (no trailing slash)
+            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/sivendar2/employee-department-1.git"
+            git push -u origin "$BRANCH_NAME"
+
+            # Create PR with gh (GH_TOKEN is picked automatically)
+            gh pr create \
+              --repo sivendar2/employee-department-1 \
+              --base main \
+              --head "$BRANCH_NAME" \
+              --title "SAST: Auto-fixed issues (Nexus IQ + OpenRewrite/Semgrep)" \
+              --body "Automated remediation. See attached compilation log for validation."
+          '''
+        }
+      }
+    }
+
+ // Build using the remediated code when it compiled OK
+    stage('Build App (remediated)') {
+      when { expression { env.REMEDIATION_OK == 'true' } }
+      steps {
+        sh '''
+          set -euxo pipefail
+          cd "$REMEDIATION_DIR/repo"
+          mvn clean package -DskipTests
+        '''
+      }
+    }
+        
 stage('Configure Semgrep PATH on Windows') {
     steps {
         bat '''
@@ -254,3 +389,4 @@ stage('Configure Semgrep PATH on Windows') {
         
     }
 }
+
