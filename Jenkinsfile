@@ -44,57 +44,45 @@ pipeline {
     }
 
     stage('Run Remediation (safe temp clone)') {
-      steps {
-        withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
-          withEnv(['MVN_EXE=C:\\maven\\bin\\mvn.cmd']) { // force Maven, skip mvnw confusion
-            bat '''
-              @echo off
-              setlocal enabledelayedexpansion
+  steps {
+    withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
+      withEnv(['MVN_EXE=C:\\maven\\bin\\mvn.cmd']) {
+        bat '''
+          @echo off
+          setlocal enabledelayedexpansion
 
-              for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
-              set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
-              set OUT_DIR=%WORKSPACE%\\scripts\\output
+          for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
+          set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
+          set OUT_DIR=%WORKSPACE%\\scripts\\output
 
-              rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
-              mkdir "%REMEDIATION_DIR%"
-              rem wipe previous output so stale flags don’t linger
-              rmdir /S /Q "scripts\\output" 2>nul
-              mkdir "scripts\\output"
-              
-              cd "%REMEDIATION_DIR%"
+          rem ---- wipe previous outputs to avoid stale flags/logs ----
+          if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" 2>nul
+          mkdir "%OUT_DIR%"
 
-              for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
-              echo !BRANCH_NAME! > BRANCH_NAME.txt
+          rem optional: also start fresh temp clone
+          rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
+          mkdir "%REMEDIATION_DIR%"
+          cd "%REMEDIATION_DIR%"
 
-              rem Prefer python; fall back to py -3
-              where python >nul 2>&1 && (
-                python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
-                  --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-                  --branch-name "!BRANCH_NAME!" ^
-                  --nexus-iq-report "%REPORT_ABS%" ^
-                  --py-sca-report "scripts/data/py_sca_report.json" ^
-                  --py-requirements "requirements.txt" ^
-                  --js-version-strategy keep_prefix ^
-                  --output-dir "%OUT_DIR%" ^
-                  --slack-webhook ""
-              ) || (
-                py -3 "%VRF_TOOL_DIR%\\scripts\\main.py" ^
-                  --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-                  --branch-name "!BRANCH_NAME!" ^
-                  --nexus-iq-report "%REPORT_ABS%" ^
-                  --py-sca-report "scripts/data/py_sca_report.json" ^
-                  --py-requirements "requirements.txt" ^
-                  --js-version-strategy keep_prefix ^
-                  --output-dir "%OUT_DIR%" ^
-                  --slack-webhook ""
-              )
+          for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+          echo !BRANCH_NAME! > BRANCH_NAME.txt
 
-              endlocal
-            '''
-          }
-        }
+          python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
+            --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+            --branch-name "!BRANCH_NAME!" ^
+            --nexus-iq-report "%REPORT_ABS%" ^
+            --py-sca-report "scripts/data/py_sca_report.json" ^
+            --py-requirements "requirements.txt" ^
+            --js-version-strategy keep_prefix ^
+            --output-dir "%OUT_DIR%" ^
+            --slack-webhook ""
+
+          endlocal
+        '''
       }
     }
+  }
+}
 
   stage('Read Remediation Result') {
   steps {
@@ -188,6 +176,7 @@ pipeline {
     }
   }
 }
+
 
 
 
