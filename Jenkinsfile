@@ -81,28 +81,22 @@ pipeline {
         }
       }
     }
-
-    stage('Validate Build (remediated)') {
-      steps {
-        script {
-          try {
-            bat '''
-              @echo off
-              setlocal
-              cd "%REMEDIATION_DIR%\\repo"
-              call mvn -e -B -DskipTests compile > "..\\..\\remediation_compile.log" 2>&1
-              endlocal
-            '''
-            env.REMEDIATION_OK = 'true'
-          } catch (e) {
-            bat 'echo Compilation failed after remediation. See remediation_compile.log > remediation_compile_fail.txt'
-            env.REMEDIATION_OK = 'false'
-          } finally {
-            archiveArtifacts artifacts: 'remediation_compile.log, **/remediation_compile_fail.txt', onlyIfSuccessful: false
-          }
-        }
-      }
-    }
+    stage('Read Remediation Result') {
+  steps {
+    bat '''
+      @echo off
+      setlocal
+      if exist "scripts\\output\\remediation_ok.flag" (
+        echo Remediation compile OK
+        setx REMEDIATION_OK true
+      ) else (
+        echo Remediation compile FAILED
+        setx REMEDIATION_OK false
+      )
+      endlocal
+    '''
+  }
+}
 
     stage('Build App (remediated)') {
       when { expression { env.REMEDIATION_OK == 'true' } }
@@ -331,3 +325,4 @@ pipeline {
     }
   }
 }
+
