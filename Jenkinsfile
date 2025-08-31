@@ -80,24 +80,9 @@ stage('Read Remediation Result') {
   steps {
     script {
       def ok = fileExists('scripts/output/remediation_ok.flag')
-      if (!ok && fileExists('scripts/output/remediation_status.json')) {
-        def s = readJSON file: 'scripts/output/remediation_status.json'
-        ok = (s?.compile_ok == true)
-      }
       env.REMEDIATION_OK = ok ? 'true' : 'false'
       echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
-
-      if (!ok) {
-        if (fileExists('scripts/output/remediation_compile.log')) {
-          echo '--- remediation_compile.log (tail) ---'
-          echo readFile('scripts/output/remediation_compile.log').split('\n').takeRight(200).join('\n')
-        }
-        if (fileExists('scripts/output/main_log.txt')) {
-          echo '--- main_log.txt (tail) ---'
-          echo readFile('scripts/output/main_log.txt').split('\n').takeRight(120).join('\n')
-        }
-      }
-      archiveArtifacts artifacts: 'scripts/output/*', allowEmptyArchive: true
+      archiveArtifacts artifacts: 'scripts/output/*.log, scripts/output/*.txt, scripts/output/*.json', allowEmptyArchive: true
     }
   }
 }
@@ -267,6 +252,7 @@ stage('Build App (remediated)') {
     }
   }
 }
+
 
 
 
