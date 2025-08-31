@@ -44,40 +44,42 @@ pipeline {
       steps {
         // GH_TOKEN is used by your Python tool to create the PR *only if* compile succeeds
         withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
-          bat '''
-            @echo off
-            setlocal enabledelayedexpansion
+        bat '''
+  @echo off
+  setlocal enabledelayedexpansion
 
-            rem workspace absolute path
-            for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
-            set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
+  rem Point directly at Maven (adjust if yours is elsewhere)
+  set "MVN_EXE=C:\\maven\\bin\\mvn.cmd"
+  if not exist "%MVN_EXE%" (
+    echo [WARN] %MVN_EXE% not found. If compile fails, install Maven or fix MVN_EXE.
+  )
 
-            rem fresh temp dir
-            rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
-            mkdir "%REMEDIATION_DIR%"
-            cd "%REMEDIATION_DIR%"
+  for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
+  set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
 
-            git clone --branch main https://github.com/sivendar2/employee-department-1.git repo
-            cd repo
+  rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
+  mkdir "%REMEDIATION_DIR%"
+  cd "%REMEDIATION_DIR%"
 
-            for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
-            echo !BRANCH_NAME! > ..\\BRANCH_NAME.txt
-            git checkout -b !BRANCH_NAME!
+  for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+  echo !BRANCH_NAME!> BRANCH_NAME.txt
 
-            rem run your remediation tool (it should compile and create PR internally on success)
-            python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
-              --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-              --branch-name "!BRANCH_NAME!" ^
-              --py-sca-report "%REPORT_ABS%" ^
-              --py-requirements "requirements.txt" ^
-              --js-version-strategy keep_prefix ^
-              --slack-webhook ""
+  python "%VRF_TOOL_DIR%\\scripts\\main.py" ^
+    --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+    --branch-name "!BRANCH_NAME!" ^
+    --py-sca-report "%REPORT_ABS%" ^
+    --py-requirements "requirements.txt" ^
+    --js-version-strategy keep_prefix ^
+    --slack-webhook ""
 
-            rem safe stage (even if already committed inside the tool)
-            git add -A
+  if not exist "%WORKSPACE%\\scripts\\output" mkdir "%WORKSPACE%\\scripts\\output"
+  if exist "%VRF_TOOL_DIR%\\scripts\\output" (
+    xcopy /Y /I "%VRF_TOOL_DIR%\\scripts\\output\\*.*" "%WORKSPACE%\\scripts\\output\\" >nul 2>&1
+  )
 
-            endlocal
-          '''
+  endlocal
+'''
+
         }
       }
     }
@@ -254,5 +256,6 @@ stage('Build App (remediated)') {
     }
   }
 }
+
 
 
