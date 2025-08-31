@@ -57,6 +57,10 @@ pipeline {
 
               rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
               mkdir "%REMEDIATION_DIR%"
+              rem wipe previous output so stale flags don’t linger
+              rmdir /S /Q "scripts\\output" 2>nul
+              mkdir "scripts\\output"
+              
               cd "%REMEDIATION_DIR%"
 
               for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
@@ -92,31 +96,30 @@ pipeline {
       }
     }
 
-    stage('Read Remediation Result') {
+  stage('Read Remediation Result') {
   steps {
     script {
-      // Quick peek for debugging
+      // Show what's there (handy on Windows)
       bat 'dir /a "scripts\\output" || echo (no output dir)'
 
-      def ok = false
+      // 1) Test-Path (PowerShell) — reliable on Windows agents
+      def okFromFlag = powershell(returnStdout: true, script: '''
+        if (Test-Path "scripts/output/remediation_ok.flag") { "true" } else { "false" }
+      ''').trim().toLowerCase() == 'true'
 
-      // 1) Prefer the flag
-      if (fileExists('scripts/output/remediation_ok.flag')) {
-        ok = true
-      } else if (fileExists('scripts/output/remediation_status.json')) {
-        // 2) Fallback to JSON (requires Pipeline Utility Steps plugin)
-        try {
-          def s = readJSON file: 'scripts/output/remediation_status.json'
-          ok = (s?.compile_ok == true)
-        } catch (e) {
-          echo "Could not read remediation_status.json: ${e}"
-        }
-      }
+      // 2) Fallback to JSON if needed
+      def okFromJson = powershell(returnStdout: true, script: '''
+        if (Test-Path "scripts/output/remediation_status.json") {
+          try {
+            $j = Get-Content "scripts/output/remediation_status.json" | ConvertFrom-Json
+            if ($j.compile_ok -eq $true) { "true" } else { "false" }
+          } catch { "false" }
+        } else { "false" }
+      ''').trim().toLowerCase() == 'true'
 
-      env.REMEDIATION_OK = ok ? 'true' : 'false'
+      env.REMEDIATION_OK = (okFromFlag || okFromJson) ? 'true' : 'false'
       echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
 
-      // Archive everything, including flags, for troubleshooting
       archiveArtifacts artifacts: 'scripts/output/*', allowEmptyArchive: true
     }
   }
@@ -156,6 +159,7 @@ pipeline {
     }
   }
 }
+
 
 
 
