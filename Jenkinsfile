@@ -84,18 +84,31 @@ pipeline {
 }
 stage('Read Remediation Result') {
   steps {
-    bat '''
-      @echo off
-      setlocal
-      if exist "scripts\\output\\remediation_ok.flag" (
-        echo Remediation compile OK
-        setx REMEDIATION_OK true
-      ) else (
-        echo Remediation compile FAILED
-        setx REMEDIATION_OK false
-      )
-      endlocal
-    '''
+    script {
+      def ok = fileExists('scripts/output/remediation_ok.flag')
+      env.REMEDIATION_OK = ok ? 'true' : 'false'
+      echo "REMEDIATION_OK = ${env.REMEDIATION_OK}"
+
+      // show logs to help debug when remediation fails
+      if (!ok) {
+        if (fileExists('scripts/output/remediation_compile.log')) {
+          echo '--- remediation_compile.log (tail) ---'
+          echo readFile('scripts/output/remediation_compile.log')
+            .split('\n')
+            .takeRight(200)
+            .join('\n')
+        }
+        if (fileExists('scripts/output/main_log.txt')) {
+          echo '--- main_log.txt (tail) ---'
+          echo readFile('scripts/output/main_log.txt')
+            .split('\n')
+            .takeRight(120)
+            .join('\n')
+        }
+      }
+
+      archiveArtifacts artifacts: 'scripts/output/*', allowEmptyArchive: true
+    }
   }
 }
 
@@ -264,6 +277,7 @@ stage('Build App (remediated)') {
     }
   }
 }
+
 
 
 
