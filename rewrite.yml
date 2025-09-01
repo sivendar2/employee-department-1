@@ -1,0 +1,23 @@
+type: specs.openrewrite.org/v1beta/recipe
+name: BulkDependencyUpgrades
+recipeList:
+- org.openrewrite.maven.UpgradeDependencyVersion:
+    groupId: org.apache.logging.log4j
+    artifactId: log4j-core
+    newVersion: 2.17.2
+- org.openrewrite.maven.UpgradeDependencyVersion:
+    groupId: junit
+    artifactId: junit
+    newVersion: 4.13.2
+- org.openrewrite.maven.UpgradeDependencyVersion:
+    groupId: commons-io
+    artifactId: commons-io
+    newVersion: 2.11.0
+- org.openrewrite.maven.UpgradeDependencyVersion:
+    groupId: com.fasterxml.jackson.core
+    artifactId: jackson-databind
+    newVersion: 2.12.5
+- org.openrewrite.maven.UpgradeDependencyVersion:
+    groupId: org.apache.httpcomponents
+    artifactId: httpclient
+    newVersion: 4.5.13
