@@ -45,16 +45,17 @@ pipeline {
       }
     }
 
-    stage('Login & Pull VRM Image') {
+   stage('Login & Pull VRM Image') {
   steps {
     bat """
       @echo off
       aws ecr get-login-password --region %AWS_REGION% ^
-        | docker login --username AWS --password-stdin %VRM_ECR_REPO%
+        | docker login --username AWS --password-stdin 779846797240.dkr.ecr.us-east-1.amazonaws.com
       docker pull %VRM_ECR_REPO%:%VRM_IMAGE_TAG%
     """
   }
 }
+
 
 
     stage('Run Remediation (safe temp clone)') {
@@ -179,5 +180,6 @@ pipeline {
     }
   }
 }
+
 
 
