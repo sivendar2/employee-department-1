@@ -96,29 +96,30 @@ pipeline {
             echo !BRANCH_NAME! > BRANCH_NAME.txt
 
             rem ---- sanity: list tool path before running ----
-            cd "%WORKSPACE%"
-            docker run --rm ^
-              -v "%WORKSPACE%\\vrm-tool":/vrm ^
-              %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-              sh -lc "ls -al /vrm/scripts || true"
+cd "%WORKSPACE%"
+docker run --rm ^
+  -v "%WORKSPACE%\\vrm-tool":/vrm ^
+  %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
+  sh -lc "ls -al /vrm || true; python --version"
 
-            rem ---- run the VRM container; mount workspace and the tool repo ----
-            docker run --rm ^
-              -e GH_TOKEN=%GH_TOKEN% ^
-              -e PYTHONUNBUFFERED=1 ^
-              -e BRANCH_NAME=!BRANCH_NAME! ^
-              -v "%WORKSPACE%":/workspace ^
-              -v "%WORKSPACE%\\vrm-tool":/vrm ^
-              %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-              python -u /vrm/scripts/main.py ^
-                --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-                --branch-name "!BRANCH_NAME!" ^
-                --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
-                --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
-                --py-requirements "/workspace/requirements.txt" ^
-                --js-version-strategy keep_prefix ^
-                --output-dir "/workspace/scripts/output" ^
-                --slack-webhook ""
+rem ---- run the VRM container; mount workspace and the tool repo ----
+docker run --rm ^
+  -e GH_TOKEN=%GH_TOKEN% ^
+  -e PYTHONUNBUFFERED=1 ^
+  -e BRANCH_NAME=!BRANCH_NAME! ^
+  -v "%WORKSPACE%":/workspace ^
+  -v "%WORKSPACE%\\vrm-tool":/vrm ^
+  -w /vrm ^
+  %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
+  python -u main.py ^
+    --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+    --branch-name "!BRANCH_NAME!" ^
+    --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
+    --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
+    --py-requirements "/workspace/requirements.txt" ^
+    --js-version-strategy keep_prefix ^
+    --output-dir "/workspace/scripts/output" ^
+    --slack-webhook ""
 
             endlocal
           '''
@@ -193,3 +194,4 @@ pipeline {
     }
   }
 }
+
