@@ -83,6 +83,16 @@ pipeline {
         """
       }
     }
+    stage('Sanity: Java/Maven in VRM image') {
+  steps {
+    bat """
+      @echo off
+      docker run --rm %VRM_ECR_REPO%:%VRM_IMAGE_TAG% java -version
+      docker run --rm %VRM_ECR_REPO%:%VRM_IMAGE_TAG% mvn -v
+    """
+  }
+}
+
 
    stage('Run Remediation (safe temp clone)') {
   steps {
@@ -155,6 +165,8 @@ pipeline {
     stage('Read Remediation Result') {
       steps {
         script {
+           bat 'type "scripts\\output\\main_log.txt"  || echo (no main_log.txt)'
+          bat 'type "scripts\\output\\remediation_compile.log"  || echo (no remediation_compile.log)'
           bat 'dir /a "scripts\\output" || echo (no output dir)'
 
           def hasFix = false
@@ -219,4 +231,5 @@ pipeline {
     }
   }
 }
+
 
