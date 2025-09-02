@@ -116,48 +116,31 @@ pipeline {
         for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
         echo !BRANCH_NAME! > BRANCH_NAME.txt
 
-        rem === quick sanity on the mounted tool ===
+        rem === decide entrypoint once (avoid || and shell conditionals) ===
         cd "%WORKSPACE%"
-        dir /b vrm-tool\\scripts || echo (vrm-tool\\scripts missing)
+        set "VRM_ENTRY=scripts/main.py"
+        if not exist "vrm-tool\\scripts\\main.py" set "VRM_ENTRY=main.py"
+        echo Using VRM entry: !VRM_ENTRY!
 
-        rem === run VRM (first try scripts/main.py, then fallback to main.py at repo root) ===
+        rem === run VRM (force system Maven to bypass mvnw exec-bit on Windows mounts) ===
         docker run --rm ^
-        -e GH_TOKEN=%GH_TOKEN% ^
-        -e PYTHONUNBUFFERED=1 ^
-        -e BRANCH_NAME=!BRANCH_NAME! ^
-        -e MVN_EXE=/usr/bin/mvn ^   REM  <<< force system Maven
-        -v "%WORKSPACE%":/workspace ^
-        -v "%WORKSPACE%\\vrm-tool":/vrm ^
-        -w /vrm ^
-        %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-        python -u scripts/main.py ^
-          --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-          --branch-name "!BRANCH_NAME!" ^
-          --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
-          --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
-          --py-requirements "/workspace/requirements.txt" ^
-          --js-version-strategy keep_prefix ^
-          --output-dir "/workspace/scripts/output" ^
-          --slack-webhook "" ^
-      || docker run --rm ^
-        -e GH_TOKEN=%GH_TOKEN% ^
-        -e PYTHONUNBUFFERED=1 ^
-        -e BRANCH_NAME=!BRANCH_NAME! ^
-        -e MVN_EXE=/usr/bin/mvn ^   REM  <<< force system Maven
-        -v "%WORKSPACE%":/workspace ^
-        -v "%WORKSPACE%\\vrm-tool":/vrm ^
-        -w /vrm ^
-        %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-        python -u main.py ^
-          --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-          --branch-name "!BRANCH_NAME!" ^
-          --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
-          --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
-          --py-requirements "/workspace/requirements.txt" ^
-          --js-version-strategy keep_prefix ^
-          --output-dir "/workspace/scripts/output" ^
-          --slack-webhook ""
-
+          -e GH_TOKEN=%GH_TOKEN% ^
+          -e PYTHONUNBUFFERED=1 ^
+          -e BRANCH_NAME=!BRANCH_NAME! ^
+          -e MVN_EXE=/usr/bin/mvn ^
+          -v "%WORKSPACE%":/workspace ^
+          -v "%WORKSPACE%\\vrm-tool":/vrm ^
+          -w /vrm ^
+          %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
+          python -u !VRM_ENTRY! ^
+            --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+            --branch-name "!BRANCH_NAME!" ^
+            --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
+            --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
+            --py-requirements "/workspace/requirements.txt" ^
+            --js-version-strategy keep_prefix ^
+            --output-dir "/workspace/scripts/output" ^
+            --slack-webhook ""
 
         endlocal
       '''
@@ -234,6 +217,7 @@ pipeline {
     }
   }
 }
+
 
 
 
