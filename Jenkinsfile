@@ -10,7 +10,7 @@ pipeline {
 
     // VRM runtime image in ECR
     VRM_ECR_REPO  = '779846797240.dkr.ecr.us-east-1.amazonaws.com/vrm'
-    VRM_IMAGE_TAG = '0.1.3'   // or 'latest'
+    VRM_IMAGE_TAG = '0.1.5'   // or 'latest'
 
     // VRM tool source repo (this repo contains main.py)
     VRM_TOOL_REPO   = 'https://github.com/sivendar2/vuln-remediation-poc-main.git'
@@ -231,5 +231,6 @@ pipeline {
     }
   }
 }
+
 
 
