@@ -8,7 +8,7 @@ pipeline {
     // VRM image in ECR
     VRM_ECR_REPO = '779846797240.dkr.ecr.us-east-1.amazonaws.com/vrm'
     VRM_IMAGE_TAG = '0.1.3'   // or 'latest' if you prefer
-    
+    VRM_TOOL_PATH = '/app/scripts/main.py'   // adjust if your Dockerfile uses a different path
     EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
     LOG_GROUP  = '/ecs/employee-department1'
 
@@ -61,20 +61,18 @@ pipeline {
     stage('Run Remediation (safe temp clone)') {
       steps {
   withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
-    // You no longer need MVN_EXE or VRF_TOOL_DIR here; the container has Python + your tool
     bat '''
       @echo off
       setlocal enabledelayedexpansion
 
       for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
-      set REPORT_ABS=%WORKSPACE%\\%NEXUS_IQ_REPORT%
       set OUT_DIR=%WORKSPACE%\\scripts\\output
 
       rem ---- wipe previous outputs to avoid stale flags/logs ----
       if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" 2>nul
       mkdir "%OUT_DIR%"
 
-      rem ---- start fresh temp clone dir ----
+      rem ---- start fresh temp clone dir (host side) ----
       rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
       mkdir "%REMEDIATION_DIR%"
       cd "%REMEDIATION_DIR%"
@@ -82,19 +80,19 @@ pipeline {
       for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
       echo !BRANCH_NAME! > BRANCH_NAME.txt
 
-      rem ---- run the VRM container; mount the Jenkins workspace at /workspace ----
+      rem ---- run the VRM container; mount workspace and call tool inside image ----
       cd "%WORKSPACE%"
       docker run --rm ^
         -e GH_TOKEN=%GH_TOKEN% ^
         -e PYTHONUNBUFFERED=1 ^
         -v "%WORKSPACE%":/workspace ^
         %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-        python /workspace/scripts/main.py ^
+        python %VRM_TOOL_PATH% ^
           --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
           --branch-name "!BRANCH_NAME!" ^
-          --nexus-iq-report "/workspace/%NEXUS_IQ_REPORT%" ^
-          --py-sca-report "scripts/data/py_sca_report.json" ^
-          --py-requirements "requirements.txt" ^
+          --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
+          --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
+          --py-requirements "/workspace/requirements.txt" ^
           --js-version-strategy keep_prefix ^
           --output-dir "/workspace/scripts/output" ^
           --slack-webhook ""
@@ -180,6 +178,7 @@ pipeline {
     }
   }
 }
+
 
 
 
