@@ -84,63 +84,73 @@ pipeline {
       }
     }
 
-    stage('Run Remediation (safe temp clone)') {
-      steps {
-        withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
-          bat '''
-            @echo off
-            setlocal enabledelayedexpansion
+   stage('Run Remediation (safe temp clone)') {
+  steps {
+    withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
+      bat '''
+        @echo off
+        setlocal enabledelayedexpansion
 
-            for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
-            set OUT_DIR=%WORKSPACE%\\scripts\\output
+        for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
+        set OUT_DIR=%WORKSPACE%\\scripts\\output
 
-            rem ---- wipe previous outputs to avoid stale flags/logs ----
-            if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" 2>nul
-            mkdir "%OUT_DIR%"
+        rem ---- wipe previous outputs to avoid stale flags/logs ----
+        if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" 2>nul
+        mkdir "%OUT_DIR%"
 
-            rem ---- start fresh temp clone dir (host side) ----
-            rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
-            mkdir "%REMEDIATION_DIR%"
-            cd "%REMEDIATION_DIR%"
+        rem ---- start fresh temp clone dir (host side) ----
+        rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
+        mkdir "%REMEDIATION_DIR%"
+        cd "%REMEDIATION_DIR%"
 
-            for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
-            echo !BRANCH_NAME! > BRANCH_NAME.txt
+        for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
+        echo !BRANCH_NAME! > BRANCH_NAME.txt
 
-            rem ---- sanity: list tool within container ----
-            cd "%WORKSPACE%"
-            docker run --rm ^
-              -v "%WORKSPACE%\\vrm-tool":/vrm ^
-              %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-              sh -lc "set -e; ls -al /vrm || true; find /vrm -maxdepth 2 -name main.py -printf 'FOUND: %p\\n' || true"
+        rem === quick sanity on the mounted tool ===
+        cd "%WORKSPACE%"
+        dir /b vrm-tool\\scripts || echo (vrm-tool\\scripts missing)
 
-            rem ---- run VRM: mount workspace + tool repo; execute /vrm/main.py if present, else /vrm/scripts/main.py ----
-            docker run --rm ^
-              -e GH_TOKEN=%GH_TOKEN% ^
-              -e PYTHONUNBUFFERED=1 ^
-              -e BRANCH_NAME=!BRANCH_NAME! ^
-              -v "%WORKSPACE%":/workspace ^
-              -v "%WORKSPACE%\\vrm-tool":/vrm ^
-              -w /vrm ^
-              %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-              sh -lc "set -e; \
-                P=main.py; \
-                if [ ! -f \\\"$P\\\" ] && [ -f scripts/main.py ]; then P=scripts/main.py; fi; \
-                echo Running tool: \\\"$P\\\"; \
-                python -u \\\"$P\\\" \
-                  --repo-url \\\"https://github.com/sivendar2/employee-department-1.git\\\" \
-                  --branch-name \\\"$BRANCH_NAME\\\" \
-                  --nexus-iq-report \\\"/workspace/scripts/data/nexus_iq_report.json\\\" \
-                  --py-sca-report \\\"/workspace/scripts/data/py_sca_report.json\\\" \
-                  --py-requirements \\\"/workspace/requirements.txt\\\" \
-                  --js-version-strategy keep_prefix \
-                  --output-dir \\\"/workspace/scripts/output\\\" \
-                  --slack-webhook \\\"\\\""
+        rem === run VRM (first try scripts/main.py, then fallback to main.py at repo root) ===
+        docker run --rm ^
+          -e GH_TOKEN=%GH_TOKEN% ^
+          -e PYTHONUNBUFFERED=1 ^
+          -e BRANCH_NAME=!BRANCH_NAME! ^
+          -v "%WORKSPACE%":/workspace ^
+          -v "%WORKSPACE%\\vrm-tool":/vrm ^
+          -w /vrm ^
+          %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
+          python -u scripts/main.py ^
+            --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+            --branch-name "!BRANCH_NAME!" ^
+            --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
+            --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
+            --py-requirements "/workspace/requirements.txt" ^
+            --js-version-strategy keep_prefix ^
+            --output-dir "/workspace/scripts/output" ^
+            --slack-webhook "" ^
+        || docker run --rm ^
+          -e GH_TOKEN=%GH_TOKEN% ^
+          -e PYTHONUNBUFFERED=1 ^
+          -e BRANCH_NAME=!BRANCH_NAME! ^
+          -v "%WORKSPACE%":/workspace ^
+          -v "%WORKSPACE%\\vrm-tool":/vrm ^
+          -w /vrm ^
+          %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
+          python -u main.py ^
+            --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+            --branch-name "!BRANCH_NAME!" ^
+            --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
+            --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
+            --py-requirements "/workspace/requirements.txt" ^
+            --js-version-strategy keep_prefix ^
+            --output-dir "/workspace/scripts/output" ^
+            --slack-webhook ""
 
-            endlocal
-          '''
-        }
-      }
+        endlocal
+      '''
     }
+  }
+}
 
     stage('Read Remediation Result') {
       steps {
@@ -209,3 +219,4 @@ pipeline {
     }
   }
 }
+
