@@ -15,6 +15,7 @@ pipeline {
     // VRM tool source repo (this repo contains main.py)
     VRM_TOOL_REPO   = 'https://github.com/sivendar2/vuln-remediation-poc-main.git'
     VRM_TOOL_BRANCH = 'main'
+    VRM_TOOL_CRED   = 'git-cred-id'   // <-- use your existing GitHub credential id
 
     EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
     LOG_GROUP          = '/ecs/employee-department1'
@@ -23,7 +24,7 @@ pipeline {
     SONAR_PROJECT_KEY = 'employee-department-1'
     SONAR_TOKEN       = credentials('sonar-token-jenkins')
 
-    // Nexus IQ JSON copied from local Windows path into workspace
+    // Nexus IQ JSON copied from local Windows path into the workspace
     NEXUS_IQ_REPORT_SRC = 'D:\\file\\demo\\vuln-remediation-poc-main\\scripts\\data\\nexus_iq_report.json'
     NEXUS_IQ_REPORT     = 'scripts\\data\\nexus_iq_report.json'
 
@@ -38,6 +39,7 @@ pipeline {
 
     stage('Checkout app repo') {
       steps {
+        // Public repo – credentials optional
         git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
       }
     }
@@ -45,7 +47,10 @@ pipeline {
     stage('Checkout VRM tool repo') {
       steps {
         dir('vrm-tool') {
-          git branch: "${env.VRM_TOOL_BRANCH}", url: "${env.VRM_TOOL_REPO}"
+          // Private repo – pass credentialsId
+          git branch: "${env.VRM_TOOL_BRANCH}",
+              credentialsId: "${env.VRM_TOOL_CRED}",
+              url: "${env.VRM_TOOL_REPO}"
         }
         bat '''
           @echo off
@@ -108,7 +113,7 @@ pipeline {
               %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
               sh -lc "set -e; ls -al /vrm || true; find /vrm -maxdepth 2 -name main.py -printf 'FOUND: %p\\n' || true"
 
-            rem ---- run VRM: mount workspace and tool repo; execute /vrm/main.py if present, else /vrm/scripts/main.py ----
+            rem ---- run VRM: mount workspace + tool repo; execute /vrm/main.py if present, else /vrm/scripts/main.py ----
             docker run --rm ^
               -e GH_TOKEN=%GH_TOKEN% ^
               -e PYTHONUNBUFFERED=1 ^
