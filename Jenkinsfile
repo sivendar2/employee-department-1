@@ -8,9 +8,13 @@ pipeline {
     ECR_REPO   = '779846797240.dkr.ecr.us-east-1.amazonaws.com/employee-department1'
     IMAGE_TAG  = 'latest'
 
-    // VRM image in ECR
+    // VRM image in ECR (Python runtime + deps)
     VRM_ECR_REPO  = '779846797240.dkr.ecr.us-east-1.amazonaws.com/vrm'
     VRM_IMAGE_TAG = '0.1.3'   // use 'latest' if you prefer
+
+    // VRM tool source repo to mount into the container
+    VRM_TOOL_REPO   = 'https://github.com/sivendar2/vulnerable_remediation.git'
+    VRM_TOOL_BRANCH = 'main'  // change if needed
 
     EXECUTION_ROLE_ARN = 'arn:aws:iam::779846797240:role/ecsTaskExecutionRole'
     LOG_GROUP          = '/ecs/employee-department1'
@@ -32,9 +36,18 @@ pipeline {
 
   stages {
 
-    stage('Checkout') {
+    stage('Checkout app repo') {
       steps {
         git branch: 'main', url: 'https://github.com/sivendar2/employee-department-1.git'
+      }
+    }
+
+    stage('Checkout VRM tool repo') {
+      steps {
+        dir('vrm-tool') {
+          git branch: "${env.VRM_TOOL_BRANCH}", url: "${env.VRM_TOOL_REPO}"
+        }
+        bat 'dir /b vrm-tool\\scripts || echo (vrm-tool/scripts missing)'
       }
     }
 
@@ -82,31 +95,30 @@ pipeline {
             for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
             echo !BRANCH_NAME! > BRANCH_NAME.txt
 
-            rem ---- run the VRM container; mount workspace and auto-detect tool path inside image ----
+            rem ---- sanity: list tool path before running ----
             cd "%WORKSPACE%"
+            docker run --rm ^
+              -v "%WORKSPACE%\\vrm-tool":/vrm ^
+              %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
+              sh -lc "ls -al /vrm/scripts || true"
+
+            rem ---- run the VRM container; mount workspace and the tool repo ----
             docker run --rm ^
               -e GH_TOKEN=%GH_TOKEN% ^
               -e PYTHONUNBUFFERED=1 ^
               -e BRANCH_NAME=!BRANCH_NAME! ^
               -v "%WORKSPACE%":/workspace ^
+              -v "%WORKSPACE%\\vrm-tool":/vrm ^
               %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-              sh -lc "set -e; \
-                for p in /app/scripts/main.py /vrm/scripts/main.py /usr/src/app/scripts/main.py /workspace/scripts/main.py; do \
-                  if [ -f \\\"$p\\\" ]; then \
-                    echo Using tool at: \\\"$p\\\"; \
-                    exec python -u \\\"$p\\\" \
-                      --repo-url \\\"https://github.com/sivendar2/employee-department-1.git\\\" \
-                      --branch-name \\\"$BRANCH_NAME\\\" \
-                      --nexus-iq-report \\\"/workspace/scripts/data/nexus_iq_report.json\\\" \
-                      --py-sca-report \\\"/workspace/scripts/data/py_sca_report.json\\\" \
-                      --py-requirements \\\"/workspace/requirements.txt\\\" \
-                      --js-version-strategy keep_prefix \
-                      --output-dir \\\"/workspace/scripts/output\\\" \
-                      --slack-webhook \\\"\\\"; \
-                  fi; \
-                done; \
-                echo 'ERROR: main.py not found in /app/scripts, /vrm/scripts, /usr/src/app/scripts, or workspace' >&2; \
-                exit 2"
+              python -u /vrm/scripts/main.py ^
+                --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+                --branch-name "!BRANCH_NAME!" ^
+                --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
+                --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
+                --py-requirements "/workspace/requirements.txt" ^
+                --js-version-strategy keep_prefix ^
+                --output-dir "/workspace/scripts/output" ^
+                --slack-webhook ""
 
             endlocal
           '''
@@ -117,20 +129,17 @@ pipeline {
     stage('Read Remediation Result') {
       steps {
         script {
-          // Show what the tool produced
           bat 'dir /a "scripts\\output" || echo (no output dir)'
 
           def hasFix = false
           def reason = 'no flag/status found'
 
-          // Preferred: simple flag file (created by the tool)
           if (fileExists('scripts/output/remediation_ok.flag')) {
             def content = readFile(file: 'scripts/output/remediation_ok.flag', encoding: 'UTF-8').trim()
             echo "FLAG CONTENT: '${content}'"
             hasFix = content.length() > 0
             reason = 'flag file present'
           } else if (fileExists('scripts/output/remediation_status.json')) {
-            // Fallback: parse compile_ok via PowerShell to avoid JsonSlurper script-security
             def okStr = powershell(returnStdout: true, script: '''
               $p = "scripts\\output\\remediation_status.json"
               if (Test-Path -LiteralPath $p) {
@@ -144,14 +153,10 @@ pipeline {
             reason = "status.json compile_ok=${okStr}"
           }
 
-          // Make the decision visible on the build
           currentBuild.displayName = "#${env.BUILD_NUMBER} • remediated=${hasFix}"
           echo "Decision: remediated=${hasFix} (${reason})"
 
-          // Persist decision to a file (don’t rely on env vars across stages)
           writeFile file: 'scripts/output/decision.txt', text: (hasFix ? 'remediated' : 'original'), encoding: 'UTF-8'
-
-          // Keep logs/flags
           archiveArtifacts artifacts: 'scripts/output/*', allowEmptyArchive: true
         }
       }
