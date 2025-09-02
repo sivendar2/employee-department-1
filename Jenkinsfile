@@ -94,7 +94,7 @@ pipeline {
 }
 
 
-   stage('Run Remediation (safe temp clone)') {
+stage('Run Remediation (safe temp clone)') {
   steps {
     withCredentials([ string(credentialsId: 'gh-token', variable: 'GH_TOKEN') ]) {
       bat '''
@@ -104,57 +104,91 @@ pipeline {
         for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
         set OUT_DIR=%WORKSPACE%\\scripts\\output
 
-        rem ---- wipe previous outputs to avoid stale flags/logs ----
         if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" 2>nul
         mkdir "%OUT_DIR%"
 
-        rem ---- start fresh temp clone dir (host side) ----
         rmdir /S /Q "%REMEDIATION_DIR%" 2>nul
         mkdir "%REMEDIATION_DIR%"
-        cd "%REMEDIATION_DIR%"
 
         for /f %%i in ('powershell -NoProfile -Command "Get-Date -UFormat %%s"') do set BRANCH_NAME=fix/sast-autofix-%%i
-        echo !BRANCH_NAME! > BRANCH_NAME.txt
+        echo !BRANCH_NAME! > "%REMEDIATION_DIR%\\BRANCH_NAME.txt"
 
-        rem === decide entrypoint once (avoid || and shell conditionals) ===
         cd "%WORKSPACE%"
-        set "VRM_ENTRY=scripts/main.py"
-        if not exist "vrm-tool\\scripts\\main.py" set "VRM_ENTRY=main.py"
+        set "VRM_ENTRY=/vrm/scripts/main.py"
+        if not exist "vrm-tool\\scripts\\main.py" set "VRM_ENTRY=/vrm/main.py"
         echo Using VRM entry: !VRM_ENTRY!
 
-        rem === run VRM (force system Maven to bypass mvnw exec-bit on Windows mounts) ===
-        rem === decide entrypoint once ===
-cd "%WORKSPACE%"
-set "VRM_ENTRY=/vrm/scripts/main.py"
-if not exist "vrm-tool\\scripts\\main.py" set "VRM_ENTRY=/vrm/main.py"
-echo Using VRM entry: !VRM_ENTRY!
-
-rem === run VRM from /tmp (NOT a Windows bind mount) ===
-docker run --rm ^
-  -e GH_TOKEN=%GH_TOKEN% ^
-  -e PYTHONUNBUFFERED=1 ^
-  -e BRANCH_NAME=!BRANCH_NAME! ^
-  -e MVN_EXE=/usr/bin/mvn ^
-  -v "%WORKSPACE%":/workspace ^
-  -v "%WORKSPACE%\\vrm-tool":/vrm ^
-  -w /tmp ^
-  %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-  python -u !VRM_ENTRY! ^
-    --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-    --branch-name "!BRANCH_NAME!" ^
-    --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
-    --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
-    --py-requirements "/workspace/requirements.txt" ^
-    --js-version-strategy keep_prefix ^
-    --output-dir "/workspace/scripts/output" ^
-    --slack-webhook "test"
-
+        docker run --rm ^
+          -e GH_TOKEN=%GH_TOKEN% ^
+          -e PYTHONUNBUFFERED=1 ^
+          -e BRANCH_NAME=!BRANCH_NAME! ^
+          -v "%WORKSPACE%":/workspace ^
+          -v "%WORKSPACE%\\vrm-tool":/vrm ^
+          -w /workspace/%REMEDIATION_DIR% ^
+          %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
+          python -u !VRM_ENTRY! ^
+            --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+            --branch-name "!BRANCH_NAME!" ^
+            --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
+            --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
+            --py-requirements "/workspace/requirements.txt" ^
+            --js-version-strategy keep_prefix ^
+            --output-dir "/workspace/scripts/output" ^
+            --slack-webhook ""
 
         endlocal
       '''
     }
   }
 }
+    stage('Fallback compile (system Maven)') {
+  steps {
+    script {
+      // Detect the mvnw permission failure
+      def needFallback = false
+      if (fileExists('scripts/output/main_log.txt')) {
+        def ml = readFile(file: 'scripts/output/main_log.txt', encoding: 'UTF-8')
+        if (ml.contains("Permission denied") && ml.contains("mvnw")) {
+          needFallback = true
+          echo "Detected mvnw permission error; running fallback compile with system Maven."
+        }
+      }
+
+      if (needFallback) {
+        // Run mvn inside the same VRM image (Java 21 + Maven installed)
+        def rc = bat(returnStatus: true, script: """
+          @echo off
+          setlocal
+          for /f "delims=" %%i in ('cd') do set WORKSPACE=%%i
+
+          docker run --rm ^
+            -v "%WORKSPACE%":/workspace ^
+            -w /workspace/%REMEDIATION_DIR%/repo ^
+            %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
+            sh -lc "mvn -B -DskipTests -Dstyle.color=never compile > /workspace/scripts/output/remediation_compile.log 2>&1"
+        """)
+        def ok = (rc == 0)
+
+        // Always emit the files our decision stage reads
+        writeFile file: 'scripts/output/remediation_status.json',
+                 text: "{\n  \"compile_ok\": " + (ok ? "true" : "false") + ",\n  \"branch\": \"" +
+                       (fileExists("${env.REMEDIATION_DIR}/BRANCH_NAME.txt") ?
+                          readFile("${env.REMEDIATION_DIR}/BRANCH_NAME.txt").trim() : "") + "\"\n}\n",
+                 encoding: 'UTF-8'
+        if (ok) {
+          writeFile file: 'scripts/output/remediation_ok.flag',
+                   text: (fileExists("${env.REMEDIATION_DIR}/BRANCH_NAME.txt") ?
+                          readFile("${env.REMEDIATION_DIR}/BRANCH_NAME.txt").trim() : "ok"),
+                   encoding: 'UTF-8'
+        }
+        echo "Fallback compile result: ${ok}"
+      } else {
+        echo "No mvnw permission error detected; skipping fallback compile."
+      }
+    }
+  }
+}
+
 
     stage('Read Remediation Result') {
       steps {
@@ -225,6 +259,7 @@ docker run --rm ^
     }
   }
 }
+
 
 
 
