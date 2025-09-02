@@ -123,24 +123,32 @@ pipeline {
         echo Using VRM entry: !VRM_ENTRY!
 
         rem === run VRM (force system Maven to bypass mvnw exec-bit on Windows mounts) ===
-        docker run --rm ^
-          -e GH_TOKEN=%GH_TOKEN% ^
-          -e PYTHONUNBUFFERED=1 ^
-          -e BRANCH_NAME=!BRANCH_NAME! ^
-          -e MVN_EXE=/usr/bin/mvn ^
-          -v "%WORKSPACE%":/workspace ^
-          -v "%WORKSPACE%\\vrm-tool":/vrm ^
-          -w /vrm ^
-          %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
-          python -u !VRM_ENTRY! ^
-            --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
-            --branch-name "!BRANCH_NAME!" ^
-            --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
-            --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
-            --py-requirements "/workspace/requirements.txt" ^
-            --js-version-strategy keep_prefix ^
-            --output-dir "/workspace/scripts/output" ^
-            --slack-webhook ""
+        rem === decide entrypoint once ===
+cd "%WORKSPACE%"
+set "VRM_ENTRY=/vrm/scripts/main.py"
+if not exist "vrm-tool\\scripts\\main.py" set "VRM_ENTRY=/vrm/main.py"
+echo Using VRM entry: !VRM_ENTRY!
+
+rem === run VRM from /tmp (NOT a Windows bind mount) ===
+docker run --rm ^
+  -e GH_TOKEN=%GH_TOKEN% ^
+  -e PYTHONUNBUFFERED=1 ^
+  -e BRANCH_NAME=!BRANCH_NAME! ^
+  -e MVN_EXE=/usr/bin/mvn ^
+  -v "%WORKSPACE%":/workspace ^
+  -v "%WORKSPACE%\\vrm-tool":/vrm ^
+  -w /tmp ^
+  %VRM_ECR_REPO%:%VRM_IMAGE_TAG% ^
+  python -u !VRM_ENTRY! ^
+    --repo-url "https://github.com/sivendar2/employee-department-1.git" ^
+    --branch-name "!BRANCH_NAME!" ^
+    --nexus-iq-report "/workspace/scripts/data/nexus_iq_report.json" ^
+    --py-sca-report "/workspace/scripts/data/py_sca_report.json" ^
+    --py-requirements "/workspace/requirements.txt" ^
+    --js-version-strategy keep_prefix ^
+    --output-dir "/workspace/scripts/output" ^
+    --slack-webhook "test"
+
 
         endlocal
       '''
@@ -217,6 +225,7 @@ pipeline {
     }
   }
 }
+
 
 
 
