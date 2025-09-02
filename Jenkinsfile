@@ -17,7 +17,6 @@ pipeline {
     SONAR_TOKEN       = credentials('sonar-token-jenkins')
 
     // remediation tool locations (Windows)
-    VRF_TOOL_DIR        = 'D:\\file\\demo\\vuln-remediation-poc-main'
     NEXUS_IQ_REPORT_SRC = 'D:\\file\\demo\\vuln-remediation-poc-main\\scripts\\data\\nexus_iq_report.json'
     NEXUS_IQ_REPORT     = 'scripts\\data\\nexus_iq_report.json'
 
@@ -180,4 +179,5 @@ pipeline {
     }
   }
 }
+
 
