@@ -1,0 +1,237 @@
+{
+  "application": {
+    "publicId": "employee-department",
+    "name": "Employee Department"
+  },
+  "scanDate": "2025-07-28T10:32:00Z",
+  "stage": "build",
+  "components": [
+    {
+      "componentIdentifier": {
+        "format": "maven",
+        "coordinates": {
+          "groupId": "org.apache.logging.log4j",
+          "artifactId": "log4j-core",
+          "version": "2.14.1"
+        }
+      },
+      "securityData": {
+        "securityIssues": [
+          {
+            "reference": "CVE-2021-44228",
+            "severity": 10.0,
+            "status": "open",
+            "description": "Log4Shell Remote Code Execution",
+            "url": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228"
+          }
+        ],
+        "remediation": {
+          "versionChanges": [
+            {
+              "targetVersion": "2.17.2",
+              "vulnerabilitiesFixed": ["CVE-2021-44228"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "componentIdentifier": {
+        "format": "maven",
+        "coordinates": {
+          "groupId": "junit",
+          "artifactId": "junit",
+          "version": "4.12"
+        }
+      },
+      "securityData": {
+        "securityIssues": [
+          {
+            "reference": "CVE-2020-15250",
+            "severity": 7.5,
+            "status": "open",
+            "description": "JUnit insecure deserialization",
+            "url": "https://nvd.nist.gov/vuln/detail/CVE-2020-15250"
+          }
+        ],
+        "remediation": {
+          "versionChanges": [
+            {
+              "targetVersion": "4.13.2",
+              "vulnerabilitiesFixed": ["CVE-2020-15250"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "componentIdentifier": {
+        "format": "maven",
+        "coordinates": {
+          "groupId": "commons-io",
+          "artifactId": "commons-io",
+          "version": "2.4"
+        }
+      },
+      "securityData": {
+        "securityIssues": [
+          {
+            "reference": "CVE-2023-34462",
+            "severity": 8.1,
+            "status": "open",
+            "description": "Commons IO arbitrary file write vulnerability",
+            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-34462"
+          }
+        ],
+        "remediation": {
+          "versionChanges": [
+            {
+              "targetVersion": "2.11.0",
+              "vulnerabilitiesFixed": ["CVE-2023-34462"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "componentIdentifier": {
+        "format": "maven",
+        "coordinates": {
+          "groupId": "com.fasterxml.jackson.core",
+          "artifactId": "jackson-databind",
+          "version": "2.9.9"
+        }
+      },
+      "securityData": {
+        "securityIssues": [
+          {
+            "reference": "CVE-2020-36518",
+            "severity": 9.8,
+            "status": "open",
+            "description": "Jackson Databind remote code execution",
+            "url": "https://nvd.nist.gov/vuln/detail/CVE-2020-36518"
+          }
+        ],
+        "remediation": {
+          "versionChanges": [
+            {
+              "targetVersion": "2.12.5",
+              "vulnerabilitiesFixed": ["CVE-2020-36518"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "componentIdentifier": {
+        "format": "maven",
+        "coordinates": {
+          "groupId": "org.hsqldb",
+          "artifactId": "hsqldb",
+          "version": "2.5.2",
+          "classifier": "",
+          "extension": "jar"
+        }
+      },
+      "displayName": "hsqldb-2.5.2.jar",
+      "property": false,
+      "matchState": "exact",
+      "pathname": [],
+      "filenames": ["hsqldb-2.5.2.jar"],
+      "identificationSource": "Sonatype",
+      "licenseData": {
+        "declaredLicenses": [
+          {
+            "license": {
+              "name": "LGPL-2.1-or-later",
+              "url": "http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html"
+            },
+            "discovered": false,
+            "comment": ""
+          }
+        ],
+        "effectiveLicenses": [
+          {
+            "license": {
+              "name": "LGPL-2.1-or-later",
+              "url": "http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html"
+            },
+            "discovered": false,
+            "comment": ""
+          }
+        ]
+      },
+      "securityData": {
+        "securityIssues": [
+          {
+            "source": "cve",
+            "reference": "CVE-2022-41853",
+            "severity": 7.5,
+            "status": "open",
+            "description": "HSQLDB remote code execution",
+            "url": "https://nvd.nist.gov/vuln/detail/CVE-2022-41853",
+            "details": {
+              "body": {
+                "refId": "CVE-2022-41853",
+                "source": "cve",
+                "remediation": {
+                  "versionChanges": [
+                    {
+                      "type": "next-no-violations-with-dependencies",
+                      "data": {
+                        "component": {
+                          "packageUrl": "pkg:maven/org.hsqldb/hsqldb@2.5.2",
+                          "hash": null,
+                          "componentIdentifier": {
+                            "format": "maven",
+                            "coordinates": {
+                              "groupId": "org.hsqldb",
+                              "artifactId": "hsqldb",
+                              "version": "2.7.1",
+                              "classifier": "",
+                              "extension": "jar"
+                            }
+                          }
+                        },
+                        "displayName": "hsqldb-2.7.1.jar"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "componentIdentifier": {
+        "format": "maven",
+        "coordinates": {
+          "groupId": "org.apache.httpcomponents",
+          "artifactId": "httpclient",
+          "version": "4.5.10"
+        }
+      },
+      "securityData": {
+        "securityIssues": [
+          {
+            "reference": "CVE-2020-13956",
+            "severity": 7.5,
+            "status": "open",
+            "description": "Apache HttpClient request smuggling / header parsing issue",
+            "url": "https://nvd.nist.gov/vuln/detail/CVE-2020-13956"
+          }
+        ],
+        "remediation": {
+          "versionChanges": [
+            {
+              "targetVersion": "4.5.13",
+              "vulnerabilitiesFixed": ["CVE-2020-13956"]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
